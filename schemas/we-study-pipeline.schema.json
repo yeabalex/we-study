@@ -1,0 +1,445 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://we-study.app/schemas/pipeline.schema.json",
+  "title": "WeStudy Pipeline & Data Schemas",
+  "description": "Comprehensive JSON Schema defining contracts for Redis intermediate cache and MongoDB permanent collections across the 4 phases.",
+  "$defs": {
+    "UserStudyPreferences": {
+      "$comment": "USER PREFERENCES: Passed into Phase 3 to customize quiz density, depth, and pace.",
+      "type": "object",
+      "properties": {
+        "questionDensity": {
+          "type": "string",
+          "enum": ["high", "medium", "low"],
+          "description": "Frequency of practice questions (e.g., 'high' = generate questions per every page range)"
+        },
+        "studyPace": {
+          "type": "string",
+          "enum": ["cram", "moderate", "deep_dive"],
+          "default": "moderate",
+          "description": "Pace of study (cram = quick high-yield points, deep_dive = thorough explanations)"
+        },
+        "contentDepth": {
+          "type": "string",
+          "enum": ["concise_summary", "balanced", "comprehensive_deep_dive"],
+          "default": "balanced"
+        },
+        "includeFlashcards": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "required": ["questionDensity"]
+    },
+
+    "PageRangeTopic": {
+      "$comment": "PHASE 1 SUB-OBJECT: Single topic chunk inside a file with its start/end page range.",
+      "type": "object",
+      "properties": {
+        "rangeId": {
+          "type": "string",
+          "description": "Unique identifier for this range (e.g. range_file1_p1_p5)"
+        },
+        "startPage": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Starting page number of this topic"
+        },
+        "endPage": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Ending page number of this topic"
+        },
+        "topicTitle": {
+          "type": "string",
+          "description": "Short heading of the topic in this page range"
+        }
+      },
+      "required": ["rangeId", "startPage", "endPage", "topicTitle"]
+    },
+
+    "S3FileMetadata": {
+      "$comment": "S3 STORAGE METADATA: Standardized object path users/{userId}/subjects/{subjectId}/sessions/{sessionId}/files/{fileId}/{fileName}",
+      "type": "object",
+      "properties": {
+        "s3Bucket": { "type": "string" },
+        "s3Key": {
+          "type": "string",
+          "description": "Structured S3 key e.g. users/u123/subjects/s456/sessions/sess789/files/f1/doc.pdf"
+        },
+        "s3Url": { "type": "string" },
+        "mimeType": { "type": "string" },
+        "fileSizeBytes": { "type": "integer" }
+      },
+      "required": ["s3Bucket", "s3Key", "mimeType", "fileSizeBytes"]
+    },
+
+    "Phase1FileAnalysis": {
+      "$comment": "PHASE 1 OUTPUT (Stored in Redis: session:{sessionId}:file:{fileId}) - AI analyzes each uploaded document to produce page ranges & a concise whole-file summary.",
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "type": "string",
+          "description": "Unique identifier of the uploaded file"
+        },
+        "fileName": {
+          "type": "string",
+          "description": "Original file name (e.g. Lecture_01_Intro.pdf)"
+        },
+        "fileType": {
+          "type": "string",
+          "enum": ["pdf", "docx", "pptx", "txt"]
+        },
+        "s3": {
+          "$ref": "#/$defs/S3FileMetadata"
+        },
+        "fileSummary": {
+          "type": "string",
+          "description": "Concise summary of what the entire file is about (used in Phase 2 for sequencing)"
+        },
+        "totalPages": {
+          "type": "integer",
+          "description": "Total page count of the document"
+        },
+        "pageRanges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PageRangeTopic"
+          },
+          "description": "List of distinct topic ranges extracted from this file"
+        }
+      },
+      "required": ["fileId", "fileName", "fileSummary", "totalPages", "pageRanges"]
+    },
+
+    "Phase2SequencedFile": {
+      "$comment": "PHASE 2 SUB-OBJECT: Single file placed into the pedagogical study sequence.",
+      "type": "object",
+      "properties": {
+        "sequenceOrder": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-indexed order indicating when to study this file (1 = First, 2 = Second...)"
+        },
+        "fileId": {
+          "type": "string",
+          "description": "ID of the file"
+        },
+        "fileName": {
+          "type": "string",
+          "description": "Name of the file"
+        },
+        "fileSummary": {
+          "type": "string",
+          "description": "Summary of the file copied from Phase 1"
+        },
+        "pedagogicalRationale": {
+          "type": "string",
+          "description": "Why AI sequenced this file here based on its summary (e.g. 'Covers prerequisites for subsequent chapters')"
+        }
+      },
+      "required": ["sequenceOrder", "fileId", "fileName", "pedagogicalRationale"]
+    },
+
+    "Phase2SequencePlan": {
+      "$comment": "PHASE 2 OUTPUT (Stored in Redis: session:{sessionId}:sequence) - AI looks ONLY at file summaries to determine the optimal study sequence of all files.",
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "description": "Session ID"
+        },
+        "userId": {
+          "type": "string",
+          "description": "User ID"
+        },
+        "subjectId": {
+          "type": "string",
+          "description": "Study subject ID"
+        },
+        "totalFiles": {
+          "type": "integer",
+          "description": "Total count of files in the sequence"
+        },
+        "orderedFiles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Phase2SequencedFile"
+          },
+          "description": "Ordered list of files to study in sequence"
+        }
+      },
+      "required": ["sessionId", "userId", "subjectId", "orderedFiles"]
+    },
+
+    "QuizQuestion": {
+      "$comment": "ASSESSMENT ITEM: Generated quiz question for a page range.",
+      "type": "object",
+      "properties": {
+        "questionId": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["multiple_choice", "true_false", "conceptual_short"]
+        },
+        "question": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Answer options for multiple choice questions"
+        },
+        "correctAnswer": {
+          "type": "string",
+          "description": "The correct answer value or option"
+        },
+        "explanation": {
+          "type": "string",
+          "description": "Clear explanation of why this answer is correct"
+        }
+      },
+      "required": ["questionId", "type", "question", "correctAnswer", "explanation"]
+    },
+
+    "Flashcard": {
+      "$comment": "ASSESSMENT ITEM: Flashcard for active recall.",
+      "type": "object",
+      "properties": {
+        "cardId": { "type": "string" },
+        "front": { "type": "string", "description": "Question / Prompt / Concept" },
+        "back": { "type": "string", "description": "Answer / Definition / Formula" }
+      },
+      "required": ["cardId", "front", "back"]
+    },
+
+    "Phase3RangeContent": {
+      "$comment": "PHASE 3 OUTPUT (Stored in Redis: session:{sessionId}:content:{fileId}:{rangeId}) - AI generates rich study notes and questions for a specific page range in a new chat.",
+      "type": "object",
+      "properties": {
+        "rangeId": {
+          "type": "string",
+          "description": "Referenced Range ID from Phase 1"
+        },
+        "fileId": {
+          "type": "string",
+          "description": "Referenced File ID from Phase 1"
+        },
+        "topicTitle": {
+          "type": "string",
+          "description": "Title of this range topic"
+        },
+        "pageRange": {
+          "type": "object",
+          "properties": {
+            "startPage": { "type": "integer" },
+            "endPage": { "type": "integer" }
+          },
+          "required": ["startPage", "endPage"]
+        },
+        "content": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string",
+              "description": "High-yield summary of this page range"
+            },
+            "markdownStudyNotes": {
+              "type": "string",
+              "description": "Richly formatted study notes in Markdown with headers, bullet points, callouts, and examples"
+            },
+            "keyFormulasOrTerms": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "term": { "type": "string" },
+                  "definition": { "type": "string" }
+                },
+                "required": ["term", "definition"]
+              }
+            }
+          },
+          "required": ["summary", "markdownStudyNotes"]
+        },
+        "assessment": {
+          "type": "object",
+          "properties": {
+            "questions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/QuizQuestion"
+              },
+              "description": "Generated questions matching user question density preference"
+            },
+            "flashcards": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Flashcard"
+              }
+            }
+          },
+          "required": ["questions"]
+        }
+      },
+      "required": ["rangeId", "fileId", "topicTitle", "pageRange", "content", "assessment"]
+    },
+
+    "GenerationSessionState": {
+      "$comment": "REDIS POLLING STATE (Key: session:{sessionId}:state) - Polled every 3 seconds by the Next.js frontend to show live progress bar & status message.",
+      "type": "object",
+      "properties": {
+        "sessionId": { "type": "string" },
+        "userId": { "type": "string" },
+        "subjectId": { "type": "string" },
+        "stage": {
+          "type": "string",
+          "enum": [
+            "uploading",
+            "phase1_processing",
+            "phase2_sequencing",
+            "phase3_generating",
+            "completed",
+            "failed"
+          ],
+          "description": "Current pipeline execution stage"
+        },
+        "progressPercentage": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Progress percentage (0 - 100)"
+        },
+        "currentStepMessage": {
+          "type": "string",
+          "description": "Human-readable status (e.g. 'Phase 3: Generating Lesson 4 of 12 for Lecture 2...')"
+        },
+        "processedFilesCount": { "type": "integer" },
+        "totalFilesCount": { "type": "integer" },
+        "processedRangesCount": { "type": "integer" },
+        "totalRangesCount": { "type": "integer" },
+        "error": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["sessionId", "stage", "progressPercentage", "currentStepMessage"]
+    },
+
+    "CourseraCourseModuleLesson": {
+      "$comment": "MONGODB SUB-DOCUMENT: Individual lesson (representing one page-range topic chunk) inside a module.",
+      "type": "object",
+      "properties": {
+        "lessonId": { "type": "string" },
+        "lessonNumber": { "type": "integer" },
+        "rangeId": { "type": "string" },
+        "title": { "type": "string" },
+        "pageRange": {
+          "type": "object",
+          "properties": {
+            "startPage": { "type": "integer" },
+            "endPage": { "type": "integer" }
+          },
+          "required": ["startPage", "endPage"]
+        },
+        "summary": { "type": "string" },
+        "markdownNotes": { "type": "string" },
+        "keyTerms": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "term": { "type": "string" },
+              "definition": { "type": "string" }
+            }
+          }
+        },
+        "quiz": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/QuizQuestion"
+          }
+        },
+        "flashcards": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Flashcard"
+          }
+        }
+      },
+      "required": ["lessonId", "lessonNumber", "rangeId", "title", "pageRange", "markdownNotes", "quiz"]
+    },
+
+    "CourseraCourseModule": {
+      "$comment": "MONGODB SUB-DOCUMENT: Module inside Coursera-like course (corresponds to one file in the Phase 2 sequence).",
+      "type": "object",
+      "properties": {
+        "moduleId": { "type": "string" },
+        "moduleNumber": { "type": "integer" },
+        "fileId": { "type": "string" },
+        "fileName": { "type": "string" },
+        "moduleTitle": { "type": "string" },
+        "moduleSummary": { "type": "string" },
+        "pedagogicalRationale": { "type": "string" },
+        "lessons": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CourseraCourseModuleLesson"
+          }
+        }
+      },
+      "required": ["moduleId", "moduleNumber", "fileId", "fileName", "moduleTitle", "moduleSummary", "lessons"]
+    },
+
+    "CourseRoadmap": {
+      "$comment": "MONGODB COLLECTION ('courses'): Final structured course stored permanently for Coursera-like viewing.",
+      "type": "object",
+      "properties": {
+        "_id": { "type": "string" },
+        "subjectId": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "preferencesUsed": {
+          "$ref": "#/$defs/UserStudyPreferences"
+        },
+        "modules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CourseraCourseModule"
+          }
+        },
+        "totalLessons": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["_id", "subjectId", "userId", "title", "modules", "totalLessons"]
+    },
+
+    "TopicChat": {
+      "$comment": "MONGODB COLLECTION ('topic_chats'): Dedicated interactive AI chat history for a specific lesson/page range.",
+      "type": "object",
+      "properties": {
+        "_id": { "type": "string" },
+        "subjectId": { "type": "string" },
+        "moduleId": { "type": "string" },
+        "lessonId": { "type": "string" },
+        "userId": { "type": "string" },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "messageId": { "type": "string" },
+              "role": { "type": "string", "enum": ["user", "assistant"] },
+              "content": { "type": "string" },
+              "timestamp": { "type": "string", "format": "date-time" }
+            },
+            "required": ["messageId", "role", "content", "timestamp"]
+          }
+        }
+      },
+      "required": ["_id", "subjectId", "moduleId", "lessonId", "userId", "messages"]
+    }
+  }
+}

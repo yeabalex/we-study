@@ -1,0 +1,230 @@
+/**
+ * =========================================================================================
+ * WE-STUDY: DATA SCHEMAS & CONTRACTS (JSONC FORMAT WITH INLINE COMMENTS)
+ * =========================================================================================
+ * This document maps out each data structure across:
+ * 1. Redis Session Intermediate Cache (Phase 1, Phase 2, Phase 3, Polling State)
+ * 2. MongoDB Permanent Storage (Coursera Course View, Dedicated Topic Chats, Progress)
+ * =========================================================================================
+ */
+
+{
+  // =======================================================================================
+  // 1. REDIS: 3-SECOND POLLING & WORKER PROGRESS STATE
+  // Stored at Redis Key: `session:{sessionId}:state`
+  // Polled by the frontend every 3 seconds to update the progress bar and status text.
+  // =======================================================================================
+  "GenerationSessionState": {
+    "sessionId": "sess_987654321",
+    "userId": "user_123",
+    "subjectId": "sub_456",
+    // Current stage in the pipeline:
+    "stage": "phase3_generating", // "uploading" | "phase1_processing" | "phase2_sequencing" | "phase3_generating" | "completed" | "failed"
+    "progressPercentage": 65,      // Integer 0 to 100
+    "currentStepMessage": "Phase 3: Generating Lesson 3 of 8 (Lecture 2, pp. 10-15)...",
+    "processedFilesCount": 2,
+    "totalFilesCount": 3,
+    "processedRangesCount": 5,
+    "totalRangesCount": 8,
+    "createdAt": "2026-09-09T15:30:00Z",
+    "updatedAt": "2026-09-09T15:32:15Z"
+  },
+
+  // =======================================================================================
+  // 2. REDIS: PHASE 1 OUTPUT (PER UPLOADED FILE)
+  // Stored at Redis Key: `session:{sessionId}:file:{fileId}`
+  // Output of AI Session 1: Extracts page ranges + a concise whole-file summary.
+  // =======================================================================================
+  "Phase1FileAnalysis": {
+    "fileId": "file_lec01",
+    "fileName": "Lecture_01_Metabolism_Intro.pdf",
+    "fileType": "pdf", // "pdf" | "docx" | "pptx" | "txt"
+    // S3 Object Storage Location:
+    // Format: users/{userId}/subjects/{subjectId}/sessions/{sessionId}/files/{fileId}/{fileName}
+    "s3": {
+      "s3Bucket": "we-study-user-uploads",
+      "s3Key": "users/user_123/subjects/sub_456/sessions/sess_987654321/files/file_lec01/Lecture_01_Metabolism_Intro.pdf",
+      "s3Url": "https://we-study-user-uploads.s3.amazonaws.com/users/user_123/subjects/sub_456/sessions/sess_987654321/files/file_lec01/Lecture_01_Metabolism_Intro.pdf",
+      "mimeType": "application/pdf",
+      "fileSizeBytes": 4512030
+    },
+    // Concise whole-file summary (Fed to Phase 2 for file sequencing):
+    "fileSummary": "Foundational introduction to cellular bioenergetics, ATP hydrolysis, and glycolysis regulation.",
+    "totalPages": 18,
+    // Discrete topic ranges identified in this file:
+    "pageRanges": [
+      {
+        "rangeId": "range_lec01_r1",
+        "startPage": 1,
+        "endPage": 6,
+        "topicTitle": "Thermodynamics & Free Energy in Cells"
+      },
+      {
+        "rangeId": "range_lec01_r2",
+        "startPage": 7,
+        "endPage": 14,
+        "topicTitle": "Glycolysis Pathway: 10 Enzymatic Steps"
+      }
+    ]
+  },
+
+  // =======================================================================================
+  // 3. REDIS: PHASE 2 OUTPUT (FILE SEQUENCE PLAN)
+  // Stored at Redis Key: `session:{sessionId}:sequence`
+  // Output of AI Session 2: AI looks ONLY at all file summaries to decide study order (1st, 2nd, 3rd...).
+  // =======================================================================================
+  "Phase2SequencePlan": {
+    "sessionId": "sess_987654321",
+    "userId": "user_123",
+    "subjectId": "sub_456",
+    "totalFiles": 2,
+    // Sequenced array of files based on pedagogical order:
+    "orderedFiles": [
+      {
+        "sequenceOrder": 1, // Study 1st
+        "fileId": "file_lec01",
+        "fileName": "Lecture_01_Metabolism_Intro.pdf",
+        "fileSummary": "Foundational introduction to cellular bioenergetics, ATP hydrolysis, and glycolysis regulation.",
+        "pedagogicalRationale": "Provides foundational concepts of bioenergetics required before studying complex cycles."
+      },
+      {
+        "sequenceOrder": 2, // Study 2nd
+        "fileId": "file_lec02",
+        "fileName": "Lecture_02_Citric_Acid_Cycle.pdf",
+        "fileSummary": "Covers the Krebs cycle, mitochondrial electron transport, and oxidative phosphorylation.",
+        "pedagogicalRationale": "Direct continuation of pyruvate oxidation following glycolysis."
+      }
+    ]
+  },
+
+  // =======================================================================================
+  // 4. REDIS: PHASE 3 OUTPUT (PER PAGE RANGE IN NEW CHAT CONTEXT)
+  // Stored at Redis Key: `session:{sessionId}:content:{fileId}:{rangeId}`
+  // Output of AI Session 3: Follows file order & Phase 1 page ranges, applies user preferences,
+  // generates rich markdown study notes + quizzes in a fresh chat context for this range.
+  // =======================================================================================
+  "Phase3RangeContent": {
+    "rangeId": "range_lec01_r2",
+    "fileId": "file_lec01",
+    "topicTitle": "Glycolysis Pathway: 10 Enzymatic Steps",
+    "pageRange": {
+      "startPage": 7,
+      "endPage": 14
+    },
+    "content": {
+      "summary": "Glycolysis converts 1 glucose into 2 pyruvate molecules yielding a net 2 ATP and 2 NADH.",
+      // Richly formatted Coursera-style study notes:
+      "markdownStudyNotes": "# Glycolysis: 10 Enzymatic Steps\n\n### 1. Preparatory Phase (Investment)\n- Glucose is phosphorylated by **Hexokinase**...\n\n### 2. Payoff Phase\n- Glyceraldehyde-3-phosphate is oxidized...",
+      "keyFormulasOrTerms": [
+        {
+          "term": "PFK-1 (Phosphofructokinase-1)",
+          "definition": "The primary rate-limiting and committed enzyme of glycolysis."
+        }
+      ]
+    },
+    // Tailored questions based on user study preferences:
+    "assessment": {
+      "questions": [
+        {
+          "questionId": "q_glyc_01",
+          "type": "multiple_choice",
+          "question": "Which enzyme is the committed and rate-limiting step in glycolysis?",
+          "options": ["Hexokinase", "Phosphofructokinase-1 (PFK-1)", "Pyruvate Kinase", "Aldolase"],
+          "correctAnswer": "Phosphofructokinase-1 (PFK-1)",
+          "explanation": "PFK-1 is the key allosteric enzyme regulating the flow of carbon through glycolysis."
+        }
+      ],
+      "flashcards": [
+        {
+          "cardId": "fc_01",
+          "front": "What is the net ATP yield of aerobic glycolysis per glucose molecule?",
+          "back": "Net 2 ATP (4 produced - 2 consumed in preparatory phase)."
+        }
+      ]
+    }
+  },
+
+  // =======================================================================================
+  // 5. MONGODB: FINAL COURSERA-STYLE COURSE DOCUMENT
+  // Stored in Collection: `courses`
+  // The complete organized course with Modules (from Phase 2 files) and Lessons (from Phase 1 ranges + Phase 3 notes).
+  // =======================================================================================
+  "CourseRoadmap": {
+    "_id": "course_65f1a2b3c4d5",
+    "subjectId": "sub_456",
+    "userId": "user_123",
+    "title": "Biochemistry Final Prep",
+    "description": "Comprehensive exam curriculum synthesized from 2 lecture decks.",
+    "preferencesUsed": {
+      "questionDensity": "high",
+      "studyPace": "moderate",
+      "contentDepth": "balanced"
+    },
+    // Modules = Files in Phase 2 Sequence
+    "modules": [
+      {
+        "moduleId": "mod_1",
+        "moduleNumber": 1,
+        "fileId": "file_lec01",
+        "fileName": "Lecture_01_Metabolism_Intro.pdf",
+        "moduleTitle": "Module 1: Cellular Bioenergetics & Glycolysis",
+        "moduleSummary": "Foundational introduction to cellular bioenergetics, ATP hydrolysis, and glycolysis regulation.",
+        "pedagogicalRationale": "Foundational concepts required before studying complex cycles.",
+        // Lessons = Page Ranges from Phase 1 + Phase 3 Content
+        "lessons": [
+          {
+            "lessonId": "les_1_1",
+            "lessonNumber": 1,
+            "rangeId": "range_lec01_r1",
+            "title": "Thermodynamics & Free Energy in Cells",
+            "pageRange": { "startPage": 1, "endPage": 6 },
+            "summary": "Overview of Gibbs free energy and ATP hydrolysis.",
+            "markdownNotes": "# Thermodynamics & Free Energy in Cells\n...",
+            "quiz": [/* Quiz Questions */],
+            "flashcards": [/* Flashcards */]
+          },
+          {
+            "lessonId": "les_1_2",
+            "lessonNumber": 2,
+            "rangeId": "range_lec01_r2",
+            "title": "Glycolysis Pathway: 10 Enzymatic Steps",
+            "pageRange": { "startPage": 7, "endPage": 14 },
+            "summary": "Detailed walkthrough of the 10 steps of glycolysis.",
+            "markdownNotes": "# Glycolysis: 10 Enzymatic Steps\n...",
+            "quiz": [/* Quiz Questions */]
+          }
+        ]
+      }
+    ],
+    "totalLessons": 2,
+    "createdAt": "2026-09-09T15:35:00Z",
+    "updatedAt": "2026-09-09T15:35:00Z"
+  },
+
+  // =======================================================================================
+  // 6. MONGODB: DEDICATED PER-LESSON TOPIC CHAT
+  // Stored in Collection: `topic_chats`
+  // Clean, isolated AI chat room grounded strictly in this lesson's page range and notes.
+  // =======================================================================================
+  "TopicChat": {
+    "_id": "chat_sub456_les1_2",
+    "subjectId": "sub_456",
+    "moduleId": "mod_1",
+    "lessonId": "les_1_2",
+    "userId": "user_123",
+    "messages": [
+      {
+        "messageId": "msg_001",
+        "role": "user",
+        "content": "Why is PFK-1 inhibited by high ATP if ATP is also a substrate?",
+        "timestamp": "2026-09-09T15:40:00Z"
+      },
+      {
+        "messageId": "msg_002",
+        "role": "assistant",
+        "content": "ATP has two binding sites on PFK-1: a high-affinity catalytic active site and a low-affinity allosteric regulatory site. When cellular ATP is high, it binds the allosteric site to downregulate the pathway.",
+        "timestamp": "2026-09-09T15:40:04Z"
+      }
+    ]
+  }
+}
