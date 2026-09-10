@@ -31,8 +31,13 @@ function preprocessMarkdown(raw: string): string {
   // 1. Ensure numbered headings like "1. Defining..." or "## 1. Defining..." have clean spacing
   text = text.replace(/^(#+)\s*(\d+\.?\s+)/gm, '$1 $2');
 
-  // 2. Fix standalone LaTeX blocks $$ ... $$ ensuring newlines before and after
-  text = text.replace(/([^\n])\s*\$\$([\s\S]*?)\$\$\s*([^\n])/g, '$1\n\n$$$$2$$\n\n$3');
+  // 2. Ensure block LaTeX equations $$...$$ have proper newlines so remark-math and KaTeX render them as display math
+  text = text.replace(/([^\n])\s*\$\$([\s\S]*?)\$\$/g, (_match, p1, p2) => {
+    return `${p1}\n\n$$\n${p2.trim()}\n$$`;
+  });
+  text = text.replace(/\$\$([\s\S]*?)\$\$\s*([^\n])/g, (_match, p1, p2) => {
+    return `$$\n${p1.trim()}\n$$\n\n${p2}`;
+  });
 
   return text;
 }
