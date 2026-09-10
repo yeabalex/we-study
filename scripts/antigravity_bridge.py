@@ -268,6 +268,10 @@ def run_phase3(payload):
     density = sanitize_str(prefs.get("questionDensity", "high"))
     q_count = 4 if density == "high" else (2 if density == "medium" else 1)
 
+    depth = sanitize_str(prefs.get("subjectContext", {}).get("targetDepth", "solid_understanding"))
+    exam_type = sanitize_str(prefs.get("subjectContext", {}).get("targetExamType", "final_exam"))
+    time_avail = sanitize_str(prefs.get("subjectContext", {}).get("timeAvailable", "1_to_2_weeks"))
+
     file_name = sanitize_str(file_info.get("fileName", "Document"))
     range_text = sanitize_str(payload.get("rangeText", ""))
     range_snippet = range_text[:7000] if range_text else f"[Pages {start_p} to {end_p} of {file_name}]"
