@@ -23,27 +23,95 @@ def sanitize_str(text):
     clean = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', ' ', text)
     return clean.strip()
 
-def clean_json_response(raw_text):
-    """Strips markdown fences, preamble, and extracts the complete outermost JSON object"""
+def safe_parse_json(raw_text):
+    """Robust JSON parser that extracts outermost JSON and repairs unescaped LaTeX / string escapes"""
+    if not raw_text or not isinstance(raw_text, str):
+        raise ValueError("Empty or non-string response from Antigravity CLI")
+
     text = raw_text.strip()
 
-    # Find the outermost { and }
+    # Direct parse attempt
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+
+    # Extract outermost JSON object
     first_brace = text.find('{')
     last_brace = text.rfind('}')
     if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
-        return text[first_brace:last_brace + 1]
+        text = text[first_brace:last_brace + 1]
 
-    # Fallback to code block regex
-    match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
-    if match:
-        block = match.group(1).strip()
-        fb = block.find('{')
-        lb = block.rfind('}')
-        if fb != -1 and lb != -1 and lb > fb:
-            return block[fb:lb + 1]
-        return block
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
 
-    return text
+    # Repair invalid string escapes (e.g. LaTeX \frac, \alpha, \Omega, \ge, \cup)
+    out = []
+    in_string = False
+    i = 0
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if not in_string:
+            if c == '"':
+                in_string = True
+            out.append(c)
+            i += 1
+        else:
+            if c == '\\':
+                if i + 1 < n:
+                    nxt = text[i + 1]
+                    if nxt == '"':
+                        out.append('\\"')
+                        i += 2
+                    elif nxt == '\\':
+                        out.append('\\\\')
+                        i += 2
+                    elif nxt == 'n' and (i + 2 >= n or not text[i + 2].isalpha()):
+                        out.append('\\n')
+                        i += 2
+                    elif nxt == 't' and (i + 2 >= n or not text[i + 2].isalpha()):
+                        out.append('\\t')
+                        i += 2
+                    elif nxt == 'r' and (i + 2 >= n or not text[i + 2].isalpha()):
+                        out.append('\\r')
+                        i += 2
+                    elif nxt == 'u' and i + 5 < n and re.match(r'^[0-9a-fA-F]{4}$', text[i+2:i+6]):
+                        out.append(text[i:i+6])
+                        i += 6
+                    else:
+                        # Raw or LaTeX backslash (\alpha, \frac, \Omega, \sum, \ge, etc.)
+                        out.append('\\\\')
+                        i += 1
+                else:
+                    out.append('\\\\')
+                    i += 1
+            elif c == '"':
+                in_string = False
+                out.append(c)
+                i += 1
+            elif c == '\n':
+                out.append('\\n')
+                i += 1
+            elif c == '\r':
+                out.append('\\r')
+                i += 1
+            elif c == '\t':
+                out.append('    ')
+                i += 1
+            else:
+                out.append(c)
+                i += 1
+
+    repaired = "".join(out)
+    try:
+        return json.loads(repaired)
+    except Exception:
+        # Extra fallback: replace any remaining invalid backslash sequences
+        escaped_fallback = re.sub(r'\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})', r'\\\\', text)
+        return json.loads(escaped_fallback)
 
 def call_antigravity_cli(prompt, max_retries=3):
     """Executes the prompt directly through Antigravity CLI with automatic retries for network drops"""
@@ -141,8 +209,7 @@ Return strictly a single valid JSON object without any other text:
 """
 
     raw_response = call_antigravity_cli(prompt)
-    cleaned = clean_json_response(raw_response)
-    data = json.loads(cleaned)
+    data = safe_parse_json(raw_response)
     data["fileId"] = file_id
     data["fileName"] = file_name
     data["fileType"] = file_type
@@ -186,8 +253,7 @@ Return strictly a single valid JSON object without any other text:
 """
 
     raw_response = call_antigravity_cli(prompt)
-    cleaned = clean_json_response(raw_response)
-    return json.loads(cleaned)
+    return safe_parse_json(raw_response)
 
 def run_phase3(payload):
     """Phase 3: Real Study Notes & Quiz Generation in New Context using Antigravity CLI"""
@@ -259,8 +325,7 @@ Return strictly a single valid JSON object without any other text:
 """
 
     raw_response = call_antigravity_cli(prompt)
-    cleaned = clean_json_response(raw_response)
-    return json.loads(cleaned)
+    return safe_parse_json(raw_response)
 
 def run_chat(payload):
     """Dedicated Lesson Tutor Chat with Antigravity CLI"""
