@@ -50,6 +50,7 @@ function CodeBlock({ inline, className, children, ...props }: any) {
   const codeString = String(children).replace(/\n$/, '');
   const match = /language-(\w+)/.exec(className || '');
   const language = match ? match[1] : '';
+  const isMultiLine = codeString.includes('\n');
 
   const handleCopy = () => {
     navigator.clipboard.writeText(codeString);
@@ -68,13 +69,22 @@ function CodeBlock({ inline, className, children, ...props }: any) {
     );
   }
 
+  // Compact code snippet for short single-line code blocks (e.g. True / False / small terms)
+  if (!isMultiLine && !language && codeString.length < 60) {
+    return (
+      <span className="inline-block my-1 px-2.5 py-1 rounded-lg bg-[#141518] text-amber-300 font-mono text-xs border border-neutral-800 shadow-2xs">
+        <code>{codeString}</code>
+      </span>
+    );
+  }
+
   // Multi-line code block or ASCII diagram
   return (
     <div className="relative my-5 rounded-2xl bg-[#141518] border border-neutral-800 text-neutral-100 overflow-hidden shadow-md group">
       {/* Header Bar */}
       <div className="flex items-center justify-between px-4 py-2 bg-[#1C1E23] border-b border-neutral-800 text-xs text-neutral-400 font-mono">
-        <span className="uppercase text-[10px] tracking-wider font-bold">
-          {language || 'DIAGRAM / CODE'}
+        <span className="uppercase text-[10px] tracking-wider font-bold text-neutral-300">
+          {language ? language : 'CODE / DIAGRAM'}
         </span>
         <button
           onClick={handleCopy}
@@ -215,24 +225,45 @@ export function CourseMarkdown({ content, className = '' }: CourseMarkdownProps)
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}
         components={{
-          h1: ({ node, ...props }) => (
-            <h1
-              className="text-2xl sm:text-3xl font-extrabold text-neutral-900 mt-8 mb-4 pb-2.5 border-b-2 border-neutral-200 flex items-center gap-2"
-              {...props}
-            />
-          ),
-          h2: ({ node, ...props }) => (
-            <h2
-              className="text-lg sm:text-xl font-bold text-neutral-900 mt-7 mb-3 pb-1.5 border-b border-neutral-100 flex items-center gap-2"
-              {...props}
-            />
-          ),
-          h3: ({ node, ...props }) => (
-            <h3
-              className="text-base font-bold text-neutral-800 mt-5 mb-2 flex items-center gap-1.5"
-              {...props}
-            />
-          ),
+          h1: ({ node, children, ...props }) => {
+            const text = React.Children.toArray(children).join('');
+            const id = text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
+            return (
+              <h1
+                id={id}
+                className="text-2xl sm:text-3xl font-extrabold text-neutral-900 mt-8 mb-4 pb-2.5 border-b-2 border-neutral-200 flex items-center gap-2 scroll-mt-20"
+                {...props}
+              >
+                {children}
+              </h1>
+            );
+          },
+          h2: ({ node, children, ...props }) => {
+            const text = React.Children.toArray(children).join('');
+            const id = text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
+            return (
+              <h2
+                id={id}
+                className="text-lg sm:text-xl font-bold text-neutral-900 mt-7 mb-3 pb-1.5 border-b border-neutral-100 flex items-center gap-2 scroll-mt-20"
+                {...props}
+              >
+                {children}
+              </h2>
+            );
+          },
+          h3: ({ node, children, ...props }) => {
+            const text = React.Children.toArray(children).join('');
+            const id = text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
+            return (
+              <h3
+                id={id}
+                className="text-base font-bold text-neutral-800 mt-5 mb-2 flex items-center gap-1.5 scroll-mt-20"
+                {...props}
+              >
+                {children}
+              </h3>
+            );
+          },
           h4: ({ node, ...props }) => (
             <h4 className="text-sm font-bold text-neutral-700 mt-4 mb-1" {...props} />
           ),

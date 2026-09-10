@@ -1,9 +1,7 @@
 'use client';
 
-import React, { useEffect, useState, use } from 'react';
+import React, { useEffect, useState, use, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { CourseMarkdown } from '@/components/markdown/CourseMarkdown';
 import { SparkLogo } from '@/components/illustrations/SparkLogo';
 import {
@@ -25,6 +23,16 @@ import {
   Check,
   Trash2,
   AlertTriangle,
+  PanelLeftClose,
+  PanelLeft,
+  PanelRightClose,
+  PanelRight,
+  Search,
+  ListTree,
+  Bookmark,
+  Zap,
+  Clock,
+  ExternalLink,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -32,6 +40,12 @@ import {
   CourseraCourseModule,
   CourseRoadmapDocument,
 } from '@/types/we-study';
+
+interface TocItem {
+  id: string;
+  text: string;
+  level: number;
+}
 
 export default function CoursePage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
@@ -46,6 +60,11 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
   const [activeTab, setActiveTab] = useState<'notes' | 'quiz' | 'flashcards'>('notes');
   const [isLoading, setIsLoading] = useState(true);
 
+  // Layout sidebar visibility states
+  const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
+  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
+  const [sidebarSearchQuery, setSidebarSearchQuery] = useState('');
+
   // Quiz state
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
   const [isQuizSubmitted, setIsQuizSubmitted] = useState(false);
@@ -59,6 +78,10 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
   const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isSendingChat, setIsSendingChat] = useState(false);
+
+  // Delete subject state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeletingSubject, setIsDeletingSubject] = useState(false);
 
   useEffect(() => {
     async function loadCourse() {
@@ -114,6 +137,55 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
     }
     loadChat();
   }, [selectedLesson, course]);
+
+  // Extract Table of Contents from markdown notes
+  const tocItems: TocItem[] = useMemo(() => {
+    if (!selectedLesson?.markdownNotes) return [];
+    const lines = selectedLesson.markdownNotes.split('\n');
+    const items: TocItem[] = [];
+    for (const line of lines) {
+      const match = /^(#{1,3})\s+(.+)$/.exec(line);
+      if (match) {
+        const level = match[1].length;
+        const text = match[2].trim().replace(/\*\*/g, '').replace(/`/g, '');
+        const id = text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
+        items.push({ id, text, level });
+      }
+    }
+    return items;
+  }, [selectedLesson?.markdownNotes]);
+
+  // Flat list of all lessons for previous/next navigation
+  const allFlatLessons = useMemo(() => {
+    if (!course?.modules) return [];
+    return course.modules.flatMap((m) =>
+      m.lessons.map((l) => ({ ...l, parentModule: m }))
+    );
+  }, [course]);
+
+  const currentLessonIndex = allFlatLessons.findIndex(
+    (l) => l.lessonId === selectedLesson?.lessonId
+  );
+
+  const prevLesson = currentLessonIndex > 0 ? allFlatLessons[currentLessonIndex - 1] : null;
+  const nextLesson = currentLessonIndex < allFlatLessons.length - 1 ? allFlatLessons[currentLessonIndex + 1] : null;
+
+  const handleNavigateLesson = (target: any) => {
+    setSelectedModule(target.parentModule);
+    setSelectedLesson(target);
+    setActiveTab('notes');
+    if (!expandedModuleIds.includes(target.parentModule.moduleId)) {
+      setExpandedModuleIds((prev) => [...prev, target.parentModule.moduleId]);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const scrollToSection = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
 
   const toggleModuleAccordion = (moduleId: string) => {
     setExpandedModuleIds((prev) =>
@@ -177,14 +249,15 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
     }
   };
 
-  const handleSendChatMessage = async (e?: React.FormEvent) => {
+  const handleSendChatMessage = async (presetText?: string, e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!chatInput.trim() || isSendingChat || !selectedLesson || !selectedModule || !course) return;
+    const textToSend = (presetText || chatInput).trim();
+    if (!textToSend || isSendingChat || !selectedLesson || !selectedModule || !course) return;
 
-    const userText = chatInput.trim();
     setChatInput('');
-    setChatMessages((prev) => [...prev, { role: 'user', content: userText }]);
+    setChatMessages((prev) => [...prev, { role: 'user', content: textToSend }]);
     setIsSendingChat(true);
+    setIsChatOpen(true);
 
     try {
       const res = await fetch('/api/chat/lesson', {
@@ -197,7 +270,7 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
           rangeId: selectedLesson.rangeId,
           topicTitle: selectedLesson.title,
           markdownNotes: selectedLesson.markdownNotes,
-          message: userText,
+          message: textToSend,
         }),
       });
 
@@ -211,9 +284,6 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
       setIsSendingChat(false);
     }
   };
-
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [isDeletingSubject, setIsDeletingSubject] = useState(false);
 
   const handleDeleteSubject = async () => {
     if (!course) return;
@@ -255,37 +325,67 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
   const completedCount = progress.completedLessonIds?.length || 0;
   const progressPercent = Math.round((completedCount / Math.max(totalLessons, 1)) * 100);
 
+  // Filter modules based on search
+  const filteredModules = course.modules.map((mod) => {
+    if (!sidebarSearchQuery.trim()) return mod;
+    const q = sidebarSearchQuery.toLowerCase();
+    const matchingLessons = mod.lessons.filter(
+      (l) => l.title.toLowerCase().includes(q) || l.summary.toLowerCase().includes(q)
+    );
+    return {
+      ...mod,
+      lessons: matchingLessons,
+    };
+  }).filter((mod) => mod.lessons.length > 0 || !sidebarSearchQuery.trim());
+
   return (
-    <div className="min-h-screen bg-[#F8F9FA] text-neutral-900 font-sans flex flex-col">
+    <div className="min-h-screen bg-[#F8F9FA] text-neutral-900 font-sans flex flex-col h-screen overflow-hidden">
       {/* Top Header */}
-      <header className="bg-white border-b border-neutral-200/80 sticky top-0 z-30 h-14 px-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <header className="bg-white border-b border-neutral-200/80 sticky top-0 z-30 h-14 px-4 flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center gap-3">
           <button
             onClick={() => router.push('/dashboard')}
-            className="flex items-center gap-1 text-xs font-bold text-neutral-500 hover:text-neutral-900 transition-colors"
+            className="flex items-center gap-1.5 text-xs font-bold text-neutral-500 hover:text-neutral-900 transition-colors p-1.5 rounded-lg hover:bg-neutral-100"
+            title="Back to Dashboard"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Dashboard</span>
+            <span className="hidden sm:inline">Dashboard</span>
           </button>
+
           <div className="h-4 w-px bg-neutral-200" />
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-md bg-neutral-900 text-white flex items-center justify-center">
+
+          {/* Left Sidebar Toggle Button */}
+          <button
+            onClick={() => setIsLeftSidebarOpen((prev) => !prev)}
+            className={`p-1.5 rounded-lg border transition-all flex items-center gap-1.5 text-xs font-bold ${
+              isLeftSidebarOpen
+                ? 'bg-neutral-100 text-neutral-900 border-neutral-300'
+                : 'bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50'
+            }`}
+            title={isLeftSidebarOpen ? 'Hide Syllabus Sidebar' : 'Show Syllabus Sidebar'}
+          >
+            {isLeftSidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
+            <span className="hidden md:inline">{isLeftSidebarOpen ? 'Hide Syllabus' : 'Syllabus'}</span>
+          </button>
+
+          <div className="flex items-center gap-2 pl-1">
+            <div className="w-6 h-6 rounded-md bg-neutral-900 text-white flex items-center justify-center flex-shrink-0">
               <SparkLogo className="w-3.5 h-3.5 text-amber-400" />
             </div>
-            <span className="font-extrabold text-sm text-neutral-900 truncate max-w-xs sm:max-w-md">
+            <span className="font-extrabold text-sm text-neutral-900 truncate max-w-xs sm:max-w-sm lg:max-w-md">
               {course.title}
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           {/* Progress Bar */}
-          <div className="hidden sm:flex items-center gap-2">
-            <div className="text-xs font-bold text-neutral-600">
+          <div className="hidden sm:flex items-center gap-2 bg-neutral-50 border border-neutral-200/80 px-3 py-1 rounded-xl">
+            <div className="text-[11px] font-bold text-neutral-700">
               {completedCount}/{totalLessons} completed ({progressPercent}%)
             </div>
-            <div className="w-24 h-2 bg-neutral-200 rounded-full overflow-hidden">
-              <div className="h-full bg-emerald-600 rounded-full" style={{ width: `${progressPercent}%` }} />
+            <div className="w-20 h-1.5 bg-neutral-200 rounded-full overflow-hidden">
+              <div className="h-full bg-emerald-600 rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }} />
             </div>
           </div>
 
@@ -295,40 +395,93 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
             className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all hover:scale-[1.02]"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>Ask Antigravity Tutor</span>
+            <span className="hidden sm:inline">Ask AI Tutor</span>
+          </button>
+
+          {/* Right Companion Sidebar Toggle */}
+          <button
+            onClick={() => setIsRightSidebarOpen((prev) => !prev)}
+            className={`p-1.5 rounded-lg border transition-all flex items-center gap-1.5 text-xs font-bold ${
+              isRightSidebarOpen
+                ? 'bg-neutral-100 text-neutral-900 border-neutral-300'
+                : 'bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50'
+            }`}
+            title={isRightSidebarOpen ? 'Hide Study Companion' : 'Show Study Companion'}
+          >
+            {isRightSidebarOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}
+            <span className="hidden lg:inline">{isRightSidebarOpen ? 'Hide Tools' : 'Study Tools'}</span>
           </button>
 
           {/* Delete Subject Button */}
           <button
             onClick={() => setShowDeleteModal(true)}
             title="Delete Subject & Files"
-            className="p-2 rounded-xl text-neutral-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+            className="p-1.5 rounded-lg text-neutral-400 hover:text-red-600 hover:bg-red-50 transition-colors"
           >
             <Trash2 className="w-4 h-4" />
           </button>
         </div>
       </header>
 
-      {/* Main Layout: Left Sidebar + Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* Main Layout: Left Syllabus Sidebar + Center Reading Canvas + Right Companion Panel */}
+      <div className="flex-1 flex overflow-hidden relative">
         {/* ========================================================================= */}
         {/* 1. COURSERA-STYLE LEFT SIDEBAR (SYLLABUS & MODULE ACCORDIONS) */}
         {/* ========================================================================= */}
-        <aside className="w-80 bg-white border-r border-neutral-200/80 flex flex-col flex-shrink-0 overflow-y-auto hidden md:flex">
-          <div className="p-4 border-b border-neutral-100">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-neutral-400 mb-1">Course Syllabus</h2>
-            <div className="text-xs text-neutral-600 font-medium">
-              Sequenced by Antigravity based on document summaries
+        <aside
+          className={`bg-white border-r border-neutral-200/80 flex flex-col flex-shrink-0 transition-all duration-300 ease-in-out z-20 ${
+            isLeftSidebarOpen ? 'w-80 opacity-100' : 'w-0 opacity-0 overflow-hidden border-none'
+          }`}
+        >
+          {/* Syllabus Header & Search */}
+          <div className="p-4 border-b border-neutral-100 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xs font-extrabold uppercase tracking-wider text-neutral-900">
+                  Course Syllabus
+                </h2>
+                <div className="text-[11px] text-neutral-500 font-medium">
+                  {course.modules.length} modules &bull; {totalLessons} lessons
+                </div>
+              </div>
+              <button
+                onClick={() => setIsLeftSidebarOpen(false)}
+                className="p-1 rounded-md text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100"
+                title="Collapse sidebar"
+              >
+                <PanelLeftClose className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Quick Search in syllabus */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                value={sidebarSearchQuery}
+                onChange={(e) => setSidebarSearchQuery(e.target.value)}
+                placeholder="Search topics & lessons..."
+                className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-neutral-50 border border-neutral-200 text-xs font-medium focus:border-neutral-900 outline-none"
+              />
             </div>
           </div>
 
-          <div className="p-3 space-y-3 flex-1">
-            {course.modules.map((mod) => {
-              const isExpanded = expandedModuleIds.includes(mod.moduleId);
+          {/* Module Accordions List */}
+          <div className="p-3 space-y-3 flex-1 overflow-y-auto">
+            {filteredModules.map((mod) => {
+              const isExpanded = expandedModuleIds.includes(mod.moduleId) || sidebarSearchQuery.trim().length > 0;
               const isModuleActive = selectedModule?.moduleId === mod.moduleId;
+              const completedInMod = mod.lessons.filter((l) =>
+                progress.completedLessonIds?.includes(l.lessonId)
+              ).length;
 
               return (
-                <div key={mod.moduleId} className="rounded-2xl border border-neutral-200/70 overflow-hidden bg-neutral-50/40">
+                <div
+                  key={mod.moduleId}
+                  className={`rounded-2xl border transition-all overflow-hidden ${
+                    isModuleActive ? 'border-neutral-300 bg-neutral-50/70 shadow-2xs' : 'border-neutral-200/70 bg-neutral-50/30'
+                  }`}
+                >
                   {/* Module Accordion Header */}
                   <button
                     onClick={() => toggleModuleAccordion(mod.moduleId)}
@@ -336,11 +489,16 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
                       isModuleActive ? 'bg-neutral-100/80' : 'hover:bg-neutral-100/50'
                     }`}
                   >
-                    <div>
-                      <div className="text-[10px] font-extrabold uppercase tracking-wider text-neutral-500">
-                        Module {mod.moduleNumber}
+                    <div className="space-y-0.5 pr-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded bg-neutral-200 text-neutral-700">
+                          Module {mod.moduleNumber}
+                        </span>
+                        <span className="text-[10px] text-neutral-400 font-medium">
+                          {completedInMod}/{mod.lessons.length} done
+                        </span>
                       </div>
-                      <div className="font-bold text-xs text-neutral-900 leading-snug mt-0.5">
+                      <div className="font-bold text-xs text-neutral-900 leading-snug line-clamp-1">
                         {mod.fileName}
                       </div>
                     </div>
@@ -369,7 +527,7 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
                                 : 'text-neutral-700 hover:bg-neutral-100 font-medium'
                             }`}
                           >
-                            <div className="flex items-center gap-2 truncate">
+                            <div className="flex items-center gap-2 truncate pr-1">
                               {isCompleted ? (
                                 <CheckCircle2 className={`w-4 h-4 flex-shrink-0 ${isLessonSelected ? 'text-amber-400' : 'text-emerald-600'}`} />
                               ) : (
@@ -380,7 +538,7 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
 
                             {quizAttempt && (
                               <span
-                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${
                                   isLessonSelected
                                     ? 'bg-neutral-800 text-amber-300'
                                     : 'bg-neutral-100 text-neutral-700'
@@ -403,25 +561,32 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
         {/* ========================================================================= */}
         {/* 2. MAIN LESSON VIEWPORT (STUDY NOTES, QUIZZES, FLASHCARDS) */}
         {/* ========================================================================= */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-8 lg:p-10 max-w-4xl mx-auto space-y-6">
+        <main className="flex-1 overflow-y-auto px-4 sm:px-8 lg:px-12 py-8 space-y-6 min-w-0">
           {selectedLesson ? (
-            <>
+            <div className="max-w-4xl mx-auto space-y-6">
               {/* Lesson Top Header */}
-              <div className="space-y-2 border-b border-neutral-200/80 pb-6">
-                <div className="flex items-center gap-2 text-xs text-neutral-500 font-medium">
-                  <span>{selectedModule?.fileName}</span>
+              <div className="space-y-3 border-b border-neutral-200/80 pb-6">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500 font-medium">
+                  <span className="px-2.5 py-0.5 rounded-md bg-neutral-100 font-bold text-neutral-700">
+                    Module {selectedModule?.moduleNumber}: {selectedModule?.fileName}
+                  </span>
                   <span>&bull;</span>
                   <span className="font-bold text-neutral-800">
-                    Pages {selectedLesson.pageRange.startPage} - {selectedLesson.pageRange.endPage}
+                    Pages {selectedLesson.pageRange.startPage} &ndash; {selectedLesson.pageRange.endPage}
+                  </span>
+                  <span>&bull;</span>
+                  <span className="flex items-center gap-1 text-neutral-400">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>~4 min read</span>
                   </span>
                 </div>
 
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-neutral-900 tracking-tight">
+                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-neutral-900 tracking-tight leading-tight">
                   {selectedLesson.title}
                 </h1>
 
                 {/* Tab Switcher */}
-                <div className="flex items-center gap-2 pt-4">
+                <div className="flex items-center gap-2 pt-3 overflow-x-auto">
                   {[
                     { id: 'notes', label: 'Study Notes & Concepts', icon: BookOpen },
                     { id: 'quiz', label: `Practice Quiz (${selectedLesson.quiz.length} Qs)`, icon: Award },
@@ -433,7 +598,7 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
                       <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id as any)}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
+                        className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all flex-shrink-0 ${
                           isActive
                             ? 'bg-neutral-900 text-white shadow-sm'
                             : 'bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50'
@@ -450,11 +615,11 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
               {/* TAB 1: STUDY NOTES */}
               {activeTab === 'notes' && (
                 <div className="space-y-6 animate-fadeIn">
-                  {/* High-yield summary box */}
-                  <div className="p-5 rounded-2xl bg-amber-50/80 border border-amber-200/80 text-amber-950 space-y-1 shadow-sm">
+                  {/* High-yield Executive Overview */}
+                  <div className="p-6 rounded-3xl bg-amber-50/80 border border-amber-200/80 text-amber-950 space-y-1.5 shadow-sm">
                     <div className="text-xs font-extrabold uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Executive Overview</span>
+                      <Sparkles className="w-4 h-4 text-amber-600" />
+                      <span>Executive Overview & Key Takeaway</span>
                     </div>
                     <p className="text-sm font-medium leading-relaxed">{selectedLesson.summary}</p>
                   </div>
@@ -466,35 +631,54 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
 
                   {/* Key Terms Glossary */}
                   {selectedLesson.keyTerms && selectedLesson.keyTerms.length > 0 && (
-                    <div className="bg-white rounded-3xl p-6 border border-neutral-200/80 space-y-3 shadow-sm">
-                      <h3 className="font-extrabold text-sm text-neutral-900 uppercase tracking-wider">
-                        Core Vocabulary & Formulas
-                      </h3>
+                    <div id="key-vocabulary" className="bg-white rounded-3xl p-6 sm:p-8 border border-neutral-200/80 space-y-4 shadow-sm scroll-mt-20">
+                      <div className="flex items-center gap-2">
+                        <Bookmark className="w-4 h-4 text-neutral-700" />
+                        <h3 className="font-extrabold text-sm text-neutral-900 uppercase tracking-wider">
+                          Core Vocabulary & Formulas
+                        </h3>
+                      </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {selectedLesson.keyTerms.map((term, i) => (
-                          <div key={i} className="p-3.5 rounded-xl bg-neutral-50 border border-neutral-200/60">
+                          <div key={i} className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200/70 space-y-1">
                             <div className="font-bold text-xs text-neutral-900">{term.term}</div>
-                            <div className="text-xs text-neutral-500 mt-1">{term.definition}</div>
+                            <div className="text-xs text-neutral-600 leading-relaxed">{term.definition}</div>
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
 
-                  {/* Next Step CTA */}
-                  <div className="p-6 bg-gradient-to-r from-neutral-900 to-neutral-800 rounded-3xl text-white flex items-center justify-between">
-                    <div>
-                      <div className="font-bold text-sm">Ready to test your understanding?</div>
+                  {/* Bottom Navigation & Practice CTA */}
+                  <div className="p-6 bg-gradient-to-r from-neutral-900 via-neutral-900 to-neutral-800 rounded-3xl text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-md">
+                    <div className="space-y-1">
+                      <div className="font-extrabold text-sm flex items-center gap-2">
+                        <Zap className="w-4 h-4 text-amber-400" />
+                        <span>Ready to solidify your mastery?</span>
+                      </div>
                       <div className="text-xs text-neutral-300">
-                        Take the {selectedLesson.quiz.length}-question practice quiz for this page range.
+                        Take the {selectedLesson.quiz.length}-question practice quiz for pages {selectedLesson.pageRange.startPage}-{selectedLesson.pageRange.endPage}.
                       </div>
                     </div>
-                    <button
-                      onClick={() => setActiveTab('quiz')}
-                      className="px-5 py-2.5 bg-amber-400 hover:bg-amber-300 text-neutral-950 font-bold text-xs rounded-xl shadow transition-all"
-                    >
-                      Start Quiz
-                    </button>
+
+                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                      {prevLesson && (
+                        <button
+                          onClick={() => handleNavigateLesson(prevLesson)}
+                          className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-1.5 transition-colors"
+                        >
+                          <ArrowLeft className="w-3.5 h-3.5" />
+                          <span>Previous</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setActiveTab('quiz')}
+                        className="px-5 py-2.5 bg-amber-400 hover:bg-amber-300 text-neutral-950 font-bold text-xs rounded-xl shadow transition-all flex items-center gap-1.5"
+                      >
+                        <span>Start Quiz</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -509,7 +693,7 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
                       <div key={q.questionId} className="bg-white rounded-3xl p-6 sm:p-8 border border-neutral-200/80 shadow-sm space-y-4">
                         <div className="flex items-start justify-between gap-4">
                           <span className="text-xs font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-700">
-                            Question {qIdx + 1}
+                            Question {qIdx + 1} of {selectedLesson.quiz.length}
                           </span>
                           {isQuizSubmitted && (
                             <span
@@ -524,7 +708,7 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
                           )}
                         </div>
 
-                        <h3 className="font-bold text-base text-neutral-900">{q.question}</h3>
+                        <h3 className="font-bold text-base text-neutral-900 leading-snug">{q.question}</h3>
 
                         {/* Options */}
                         <div className="space-y-2.5 pt-2">
@@ -562,7 +746,7 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
                         {isQuizSubmitted && (
                           <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200 text-xs text-neutral-700 space-y-1">
                             <span className="font-bold text-neutral-900">Explanation:</span>
-                            <p>{q.explanation}</p>
+                            <p className="leading-relaxed">{q.explanation}</p>
                           </div>
                         )}
                       </div>
@@ -570,18 +754,30 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
                   })}
 
                   {/* Submit Button & Score Summary */}
-                  <div className="pt-2 flex items-center justify-between">
+                  <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
                     {isQuizSubmitted ? (
-                      <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 flex items-center gap-3">
-                        <Award className="w-6 h-6 text-emerald-600" />
-                        <div>
-                          <div className="font-bold text-sm">
-                            Quiz Score: {quizScore} / {selectedLesson.quiz.length} (
-                            {Math.round(((quizScore || 0) / selectedLesson.quiz.length) * 100)}%)
+                      <>
+                        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 flex items-center gap-3">
+                          <Award className="w-6 h-6 text-emerald-600 flex-shrink-0" />
+                          <div>
+                            <div className="font-bold text-sm">
+                              Score: {quizScore} / {selectedLesson.quiz.length} (
+                              {Math.round(((quizScore || 0) / selectedLesson.quiz.length) * 100)}%)
+                            </div>
+                            <div className="text-xs text-emerald-800">Progress updated and saved to MongoDB!</div>
                           </div>
-                          <div className="text-xs text-emerald-800">Progress updated and saved to MongoDB!</div>
                         </div>
-                      </div>
+
+                        {nextLesson && (
+                          <button
+                            onClick={() => handleNavigateLesson(nextLesson)}
+                            className="px-6 py-3.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2"
+                          >
+                            <span>Next Lesson: {nextLesson.title}</span>
+                            <ArrowRight className="w-4 h-4" />
+                          </button>
+                        )}
+                      </>
                     ) : (
                       <button
                         type="button"
@@ -600,7 +796,7 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
               {activeTab === 'flashcards' && (
                 <div className="space-y-6 animate-fadeIn">
                   <div className="text-xs text-neutral-500 font-medium">
-                    Click any flashcard to flip and reveal the answer.
+                    Click any flashcard to flip and reveal the key concept or definition.
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -613,18 +809,18 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
                           onClick={() =>
                             setFlippedCards((prev) => ({ ...prev, [card.cardId]: !prev[card.cardId] }))
                           }
-                          className={`min-h-[180px] p-6 rounded-3xl border-2 cursor-pointer transition-all duration-300 flex flex-col justify-between select-none ${
+                          className={`min-h-[190px] p-6 rounded-3xl border-2 cursor-pointer transition-all duration-300 flex flex-col justify-between select-none ${
                             isFlipped
                               ? 'border-purple-600 bg-purple-50/50 shadow-md scale-[1.01]'
                               : 'border-neutral-200 bg-white hover:border-neutral-300 shadow-sm'
                           }`}
                         >
                           <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
-                            <span>{isFlipped ? 'Answer' : 'Question / Term'}</span>
+                            <span>{isFlipped ? 'Answer' : 'Question / Concept'}</span>
                             <RotateCw className="w-3.5 h-3.5" />
                           </div>
 
-                          <div className="my-auto font-bold text-sm text-neutral-900 text-center">
+                          <div className="my-auto font-bold text-sm text-neutral-900 text-center leading-relaxed">
                             {isFlipped ? card.back : card.front}
                           </div>
 
@@ -637,15 +833,126 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
                   </div>
                 </div>
               )}
-            </>
+            </div>
           ) : (
             <div className="text-center py-20 text-neutral-400">Select a lesson from the syllabus</div>
           )}
         </main>
+
+        {/* ========================================================================= */}
+        {/* 3. RIGHT SIDEBAR (STUDY COMPANION, TABLE OF CONTENTS & QUICK TOOLS) */}
+        {/* ========================================================================= */}
+        <aside
+          className={`bg-white border-l border-neutral-200/80 flex flex-col flex-shrink-0 transition-all duration-300 ease-in-out z-10 ${
+            isRightSidebarOpen ? 'w-80 opacity-100' : 'w-0 opacity-0 overflow-hidden border-none'
+          }`}
+        >
+          {/* Header */}
+          <div className="p-4 border-b border-neutral-100 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-500" />
+              <h2 className="text-xs font-extrabold uppercase tracking-wider text-neutral-900">
+                Study Companion
+              </h2>
+            </div>
+            <button
+              onClick={() => setIsRightSidebarOpen(false)}
+              className="p-1 rounded-md text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100"
+              title="Collapse study tools"
+            >
+              <PanelRightClose className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="p-4 space-y-6 flex-1 overflow-y-auto">
+            {/* Table of Contents / On This Page */}
+            {tocItems.length > 0 && (
+              <div className="space-y-2.5">
+                <div className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-neutral-400">
+                  <ListTree className="w-3.5 h-3.5" />
+                  <span>On This Page</span>
+                </div>
+                <div className="space-y-1">
+                  {tocItems.map((item, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => scrollToSection(item.id)}
+                      className={`w-full text-left py-1.5 px-2.5 rounded-lg text-xs transition-colors truncate hover:bg-neutral-100 text-neutral-600 hover:text-neutral-900 ${
+                        item.level === 1 ? 'font-bold text-neutral-900' : item.level === 2 ? 'pl-4 font-medium' : 'pl-6 text-[11px]'
+                      }`}
+                    >
+                      {item.text}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Quick Vocabulary Chips */}
+            {selectedLesson?.keyTerms && selectedLesson.keyTerms.length > 0 && (
+              <div className="space-y-2.5">
+                <div className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-neutral-400">
+                  <Bookmark className="w-3.5 h-3.5" />
+                  <span>Key Terms Quick View</span>
+                </div>
+                <div className="space-y-2">
+                  {selectedLesson.keyTerms.slice(0, 4).map((term, idx) => (
+                    <div key={idx} className="p-2.5 rounded-xl bg-neutral-50 border border-neutral-200/70 text-xs">
+                      <div className="font-bold text-neutral-900">{term.term}</div>
+                      <div className="text-[11px] text-neutral-500 mt-0.5 line-clamp-2">{term.definition}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* AI Tutor Quick Actions */}
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-neutral-400">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>AI Tutor Quick Actions</span>
+              </div>
+              <div className="space-y-1.5">
+                {[
+                  { label: 'Give an intuitive analogy', prompt: 'Explain the main concept of this lesson with a clear, memorable analogy.' },
+                  { label: 'Top exam trap to avoid', prompt: 'What is the most common misconception or exam trap related to these pages?' },
+                  { label: 'Tricky practice problem', prompt: 'Generate an advanced practice question to test my understanding of this topic.' },
+                  { label: 'Summarize in 3 bullet points', prompt: 'Summarize the highest-yield takeaways in exactly 3 bullet points.' },
+                ].map((item, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleSendChatMessage(item.prompt)}
+                    className="w-full text-left p-2.5 rounded-xl bg-neutral-50 hover:bg-neutral-100 border border-neutral-200/70 text-xs text-neutral-700 font-medium transition-all hover:border-neutral-300 flex items-center justify-between group"
+                  >
+                    <span>{item.label}</span>
+                    <Sparkles className="w-3 h-3 text-amber-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Current Lesson Progress Card */}
+            <div className="p-4 rounded-2xl bg-neutral-900 text-white space-y-2 shadow-sm">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-neutral-400 font-medium">Lesson Status</span>
+                {progress.completedLessonIds?.includes(selectedLesson?.lessonId) ? (
+                  <span className="text-emerald-400 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" /> Mastered
+                  </span>
+                ) : (
+                  <span className="text-amber-400 font-bold">In Progress</span>
+                )}
+              </div>
+              <div className="text-xs text-neutral-300">
+                Pages {selectedLesson?.pageRange.startPage} &ndash; {selectedLesson?.pageRange.endPage}
+              </div>
+            </div>
+          </div>
+        </aside>
       </div>
 
       {/* ========================================================================= */}
-      {/* 3. DEDICATED LESSON TOPIC CHAT DRAWER (GROUNDED IN LESSON NOTES) */}
+      {/* 4. DEDICATED LESSON TOPIC CHAT DRAWER (GROUNDED IN LESSON NOTES) */}
       {/* ========================================================================= */}
       {isChatOpen && (
         <div className="fixed inset-y-0 right-0 z-50 w-full sm:w-[420px] bg-white shadow-2xl border-l border-neutral-200 flex flex-col animate-slideLeft">
@@ -691,9 +998,7 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
                   ].map((preset, idx) => (
                     <button
                       key={idx}
-                      onClick={() => {
-                        setChatInput(preset);
-                      }}
+                      onClick={() => handleSendChatMessage(preset)}
                       className="w-full text-left text-[11px] font-medium p-2.5 rounded-xl bg-white border border-neutral-200/80 hover:border-neutral-400 text-neutral-700 transition-all shadow-2xs"
                     >
                       &ldquo;{preset}&rdquo;
@@ -734,7 +1039,7 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
           </div>
 
           {/* Chat Input */}
-          <form onSubmit={handleSendChatMessage} className="p-3 border-t border-neutral-200 bg-white">
+          <form onSubmit={(e) => handleSendChatMessage(undefined, e)} className="p-3 border-t border-neutral-200 bg-white">
             <div className="flex items-center gap-2">
               <input
                 type="text"
