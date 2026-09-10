@@ -155,6 +155,33 @@ export const db = {
     return subject;
   },
 
+  async deleteSubject(subjectId: string, userId: string) {
+    const mongo = await getDb();
+    if (mongo) {
+      // Delete subject
+      await mongo.collection('subjects').deleteOne({ _id: subjectId as any, userId });
+      // Delete courses
+      await mongo.collection('courses').deleteMany({ subjectId });
+      // Delete user progress
+      await mongo.collection('user_progress').deleteMany({ subjectId });
+      // Delete topic chats
+      await mongo.collection('topic_chats').deleteMany({ subjectId });
+      return true;
+    }
+
+    memoryDB.subjects.delete(subjectId);
+    for (const [id, c] of Array.from(memoryDB.courses.entries())) {
+      if (c.subjectId === subjectId) memoryDB.courses.delete(id);
+    }
+    for (const [id, p] of Array.from(memoryDB.userProgress.entries())) {
+      if (p.subjectId === subjectId) memoryDB.userProgress.delete(id);
+    }
+    for (const [k, ch] of Array.from(memoryDB.topicChats.entries())) {
+      if (ch.subjectId === subjectId) memoryDB.topicChats.delete(k);
+    }
+    return true;
+  },
+
   async getCourse(courseId: string): Promise<CourseRoadmapDocument | null> {
     const mongo = await getDb();
     if (mongo) {

@@ -12,9 +12,10 @@ import {
   Sparkles,
   LogOut,
   ChevronRight,
-  GraduationCap,
   Layers,
-  Zap,
+  Trash2,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -23,6 +24,8 @@ export default function DashboardPage() {
   const [subjects, setSubjects] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [subjectToDelete, setSubjectToDelete] = useState<any | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     async function loadData() {
@@ -50,6 +53,30 @@ export default function DashboardPage() {
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/login');
+  };
+
+  const handleDeleteSubject = async () => {
+    if (!subjectToDelete) return;
+    setIsDeleting(true);
+
+    try {
+      const res = await fetch(`/api/subjects/${subjectToDelete._id}`, {
+        method: 'DELETE',
+      });
+
+      if (res.ok) {
+        setSubjects((prev) => prev.filter((s) => s._id !== subjectToDelete._id));
+        setSubjectToDelete(null);
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to delete subject');
+      }
+    } catch (err) {
+      console.error('Delete subject error:', err);
+      alert('An error occurred while deleting the subject');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   if (isLoading) {
@@ -180,17 +207,29 @@ export default function DashboardPage() {
                 <div
                   key={sub._id}
                   onClick={() => router.push(`/subject/${sub._id}/course`)}
-                  className="bg-white rounded-3xl border border-neutral-200/80 p-6 shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-1 cursor-pointer flex flex-col justify-between group"
+                  className="bg-white rounded-3xl border border-neutral-200/80 p-6 shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-1 cursor-pointer flex flex-col justify-between group relative"
                 >
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-700">
                         {sub.subjectContext?.targetExamType ? sub.subjectContext.targetExamType.replace(/_/g, ' ') : 'Final Exam'}
                       </span>
-                      <span className="text-xs font-semibold text-emerald-600 flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Ready</span>
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-semibold text-emerald-600 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Ready</span>
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSubjectToDelete(sub);
+                          }}
+                          title="Delete subject & files"
+                          className="p-1.5 rounded-lg text-neutral-400 hover:text-red-600 hover:bg-red-50 transition-colors ml-1"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
 
                     <h3 className="font-extrabold text-lg text-neutral-900 group-hover:text-amber-600 transition-colors">
@@ -228,6 +267,71 @@ export default function DashboardPage() {
         onClose={() => setIsModalOpen(false)}
         userDefaultPreferences={user?.preferences}
       />
+
+      {/* Delete Confirmation Modal */}
+      {subjectToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="w-full max-w-md bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-neutral-200 space-y-5">
+            <div className="flex items-start justify-between">
+              <div className="w-12 h-12 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center shadow-xs">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <button
+                onClick={() => setSubjectToDelete(null)}
+                className="p-1 rounded-lg text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-xl font-extrabold text-neutral-900 tracking-tight">
+                Delete Study Subject?
+              </h3>
+              <p className="text-xs text-neutral-500 leading-relaxed">
+                Are you sure you want to delete <span className="font-bold text-neutral-900">&ldquo;{subjectToDelete.title}&rdquo;</span>?
+              </p>
+              <div className="p-3.5 rounded-xl bg-red-50 border border-red-200/80 text-red-900 text-xs leading-relaxed space-y-1">
+                <div className="font-bold">This action cannot be undone:</div>
+                <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-red-800">
+                  <li>Generated curriculum, notes, and practice quizzes</li>
+                  <li>All uploaded files & documents stored on disk</li>
+                  <li>Your quiz progress and AI tutor conversation history</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setSubjectToDelete(null)}
+                disabled={isDeleting}
+                className="px-4 py-2.5 rounded-xl border border-neutral-300 text-neutral-700 hover:bg-neutral-100 text-xs font-bold transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteSubject}
+                disabled={isDeleting}
+                className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Subject & Files</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

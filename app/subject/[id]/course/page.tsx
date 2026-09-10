@@ -23,6 +23,8 @@ import {
   X,
   FileText,
   Check,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -210,6 +212,32 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
     }
   };
 
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeletingSubject, setIsDeletingSubject] = useState(false);
+
+  const handleDeleteSubject = async () => {
+    if (!course) return;
+    setIsDeletingSubject(true);
+
+    try {
+      const res = await fetch(`/api/subjects/${course.subjectId}`, {
+        method: 'DELETE',
+      });
+
+      if (res.ok) {
+        router.push('/dashboard');
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to delete subject');
+      }
+    } catch (err) {
+      console.error('Failed to delete subject:', err);
+      alert('An error occurred while deleting the subject');
+    } finally {
+      setIsDeletingSubject(false);
+    }
+  };
+
   if (isLoading || !course) {
     return (
       <div className="min-h-screen bg-[#F5F6F8] flex items-center justify-center">
@@ -268,6 +296,15 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
             <span>Ask Antigravity Tutor</span>
+          </button>
+
+          {/* Delete Subject Button */}
+          <button
+            onClick={() => setShowDeleteModal(true)}
+            title="Delete Subject & Files"
+            className="p-2 rounded-xl text-neutral-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+          >
+            <Trash2 className="w-4 h-4" />
           </button>
         </div>
       </header>
@@ -715,6 +752,71 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Delete Subject Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="w-full max-w-md bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-neutral-200 space-y-5">
+            <div className="flex items-start justify-between">
+              <div className="w-12 h-12 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center shadow-xs">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="p-1 rounded-lg text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-xl font-extrabold text-neutral-900 tracking-tight">
+                Delete Study Subject?
+              </h3>
+              <p className="text-xs text-neutral-500 leading-relaxed">
+                Are you sure you want to delete <span className="font-bold text-neutral-900">&ldquo;{course?.title}&rdquo;</span>?
+              </p>
+              <div className="p-3.5 rounded-xl bg-red-50 border border-red-200/80 text-red-900 text-xs leading-relaxed space-y-1">
+                <div className="font-bold">This will permanently remove:</div>
+                <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-red-800">
+                  <li>All study notes, lessons, and practice quizzes</li>
+                  <li>Original uploaded course documents from disk</li>
+                  <li>Your quiz progress and tutor chat history</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                disabled={isDeletingSubject}
+                className="px-4 py-2.5 rounded-xl border border-neutral-300 text-neutral-700 hover:bg-neutral-100 text-xs font-bold transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteSubject}
+                disabled={isDeletingSubject}
+                className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isDeletingSubject ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Subject & Files</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

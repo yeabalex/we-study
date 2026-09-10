@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
 import { getCurrentUser } from '@/lib/auth/google';
 import { db } from '@/lib/db/mongodb';
 
@@ -47,5 +49,44 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, subject: newSubject });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Failed to create subject' }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  const session = await getCurrentUser();
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const { searchParams } = new URL(req.url);
+    let subjectId = searchParams.get('id') || searchParams.get('subjectId');
+
+    if (!subjectId) {
+      const body = await req.json().catch(() => ({}));
+      subjectId = body.subjectId || body.id;
+    }
+
+    if (!subjectId) {
+      return NextResponse.json({ error: 'Subject ID is required' }, { status: 400 });
+    }
+
+    // 1. Delete from database (subjects, courses, user_progress, topic_chats)
+    await db.deleteSubject(subjectId, session.userId);
+
+    // 2. Delete physical files from disk
+    const userSubjectDir = path.join(process.cwd(), 'uploads', 'users', session.userId, 'subjects', subjectId);
+    if (fs.existsSync(userSubjectDir)) {
+      fs.rmSync(userSubjectDir, { recursive: true, force: true });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Subject and associated files permanently deleted',
+      subjectId,
+    });
+  } catch (error: any) {
+    console.error('Failed to delete subject:', error);
+    return NextResponse.json({ error: error.message || 'Failed to delete subject' }, { status: 500 });
   }
 }

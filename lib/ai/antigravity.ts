@@ -96,9 +96,9 @@ export async function executePhase3WithAntigravity(params: {
   moduleNumber: number;
   lessonNumber: number;
 }): Promise<Phase3RangeContent> {
-  let targetPath = params.file.s3?.localPath;
+  let targetPath = (params.file.s3 as any)?.localPath;
   if (!targetPath && params.file.s3?.s3Key) {
-    targetPath = path.join(process.cwd(), 'uploads', params.file.s3.s3Key.replace(/\//g, '_'));
+    targetPath = path.join(process.cwd(), 'uploads', (params.file.s3 as any).s3Key.replace(/\//g, '_'));
   }
 
   let rangeText = '';
