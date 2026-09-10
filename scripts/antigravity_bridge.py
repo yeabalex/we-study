@@ -273,11 +273,26 @@ def run_phase3(payload):
     range_snippet = range_text[:7000] if range_text else f"[Pages {start_p} to {end_p} of {file_name}]"
 
     prompt = f"""
-You are an expert academic professor and exam tutor for WeStudy.
-Generate a comprehensive, Coursera-style study lesson strictly grounded in the following course material excerpt:
-- Document: "{file_name}"
-- Topic: "{topic_title}" (Pages {start_p} to {end_p})
-- Student Context: Target Exam: {exam_type}, Time Available: {time_avail}, Depth: {depth}, Question Density: {density}.
+You are an expert academic professor and master tutor for the WeStudy exam preparation platform.
+Your mission is to transform the provided course materials into an exceptionally thorough, crystal-clear, and engaging Coursera-style study lesson.
+
+PEDAGOGICAL TEACHING PRINCIPLES:
+1. FIRST-PRINCIPLES & INTUITIVE CLARITY:
+   - Explain abstract or complex concepts in simple, accessible terms first.
+   - Use vivid, relatable real-world analogies (e.g. "think of it like...") before diving into technical definitions.
+   - Never assume prior knowledge without explaining the underlying "why" and mechanics.
+2. COMPREHENSIVE DEPTH & DETAIL:
+   - Provide in-depth, thorough coverage of all topics present in the excerpt. Do not skim or skip nuances.
+   - For every formula or equation, clearly explain what every individual variable ($X, Y, \\theta, \\alpha$) represents and the physical/mathematical intuition behind it.
+3. STRUCTURED & VISUAL PRESENTATION:
+   - Use clear hierarchical section titles (## and ###) with clean spacing.
+   - Put ASCII architecture trees, flowcharts, or system diagrams strictly inside ```ascii ... ``` code fences.
+   - Use bold **Terminology** with concise definitions.
+   - Use > [!NOTE] for contextual background, > [!TIP] for high-yield exam tricks & mnemonics, and > [!WARNING] for common student traps.
+
+DOCUMENT: "{file_name}"
+TOPIC: "{topic_title}" (Pages {start_p} to {end_p})
+STUDENT CONTEXT: Target Exam: {exam_type}, Time Available: {time_avail}, Depth: {depth}, Question Density: {density}.
 
 SOURCE TEXT EXCERPT (PAGES {start_p} TO {end_p}):
 ---
@@ -285,17 +300,11 @@ SOURCE TEXT EXCERPT (PAGES {start_p} TO {end_p}):
 ---
 
 REQUIREMENTS:
-1. summary: High-yield executive overview of this page range (2-3 sentences).
-2. markdownStudyNotes: Rich, beautifully structured Markdown notes strictly grounded in the page {start_p}-{end_p} excerpt above:
-   - Use ## for main section titles (e.g. "## 1. Core Concepts & Foundations") and ### for sub-sections. Never use raw unformatted numbers for titles.
-   - Use standard LaTeX for equations: $$...$$ for display equations and $...$ for inline math variables.
-   - Put all ASCII diagrams, trees, or workflows strictly inside ```ascii ... ``` code fences so they render cleanly in monospace.
-   - Use bold **Key Terminology** followed by concise definitions or mechanism explanations.
-   - Include > [!NOTE] callouts for domain context and > [!TIP] callouts for high-yield exam traps or shortcuts.
-   - Keep paragraphs well-spaced and easy to skim.
-3. keyFormulasOrTerms: 2-4 core terminology or equations with concise definitions.
-4. assessment: Exactly {q_count} multiple-choice questions with 4 options, correctAnswer, and comprehensive explanations.
-5. flashcards: 2 active-recall flip flashcards with front (prompt) and back (explanation).
+1. summary: High-yield executive overview of this page range (2-3 clear sentences).
+2. markdownStudyNotes: Rich, beautifully structured, and highly detailed Markdown notes strictly grounded in the excerpt above adhering to the pedagogical principles.
+3. keyFormulasOrTerms: 2-4 core terminology or equations with simple, intuitive definitions.
+4. assessment: Exactly {q_count} multiple-choice questions with 4 options, correctAnswer, and comprehensive explanations detailing why the correct answer is right and why distractors are common misconceptions.
+5. flashcards: 2 active-recall flip flashcards with front (prompt) and back (intuitive, clear explanation).
 
 Return strictly a single valid JSON object without any other text:
 {{
@@ -308,7 +317,7 @@ Return strictly a single valid JSON object without any other text:
   }},
   "content": {{
     "summary": "<summary>",
-    "markdownStudyNotes": "<markdown notes>",
+    "markdownStudyNotes": "<detailed, beautifully formatted markdown notes>",
     "keyFormulasOrTerms": [
       {{ "term": "<Term>", "definition": "<Definition>" }}
     ]
@@ -321,7 +330,7 @@ Return strictly a single valid JSON object without any other text:
         "question": "<Question text>",
         "options": ["<Option A>", "<Option B>", "<Option C>", "<Option D>"],
         "correctAnswer": "<Option A>",
-        "explanation": "<Why this answer is correct>"
+        "explanation": "<Detailed explanation of correct answer and why other options are wrong>"
       }}
     ],
     "flashcards": [
@@ -355,10 +364,11 @@ Recent Chat History:
 
 Student Question: "{user_msg}"
 
-INSTRUCTIONS:
-- Provide a helpful, pedagogically clear, and encouraging explanation.
+TEACHING INSTRUCTIONS:
+- Explain concepts from first principles in simple, intuitive terms using relatable real-world analogies.
+- Break down complex mechanisms step-by-step without skipping important details.
+- Provide encouraging, structured, and exam-focused explanations.
 - Ground your answer directly in the lesson material.
-- Keep the response focused, structured, and easy to review for exams.
 """
 
     reply_text = call_antigravity_cli(prompt)
