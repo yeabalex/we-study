@@ -172,30 +172,31 @@ def run_phase1(payload):
     file_type = sanitize_str(payload.get("fileType", "pdf"))
     raw_content = sanitize_str(payload.get("fileContent", ""))
 
-    content_snippet = raw_content[:8000] if raw_content else f"[Document: {file_name}]"
+    content_snippet = raw_content[:20000] if raw_content else f"[Document: {file_name}]"
 
     prompt = f"""
-You are the AI curriculum analyzer for the WeStudy exam preparation platform.
-Analyze this course document:
+You are the master curriculum analyzer for the WeStudy exam preparation platform.
+Analyze this course document thoroughly:
 File Name: "{file_name}"
 File Type: {file_type}
 
-DOCUMENT EXCERPT / CONTENT:
+DOCUMENT CONTENT / EXCERPT:
 ---
 {content_snippet}
 ---
 
-TASK:
-1. Provide a concise, high-yield summary of what this entire document is about (2-4 sentences).
-2. Determine total pages (or estimate realistic page count if slides/notes).
-3. Identify discrete topic page ranges with descriptive topic headings.
+TASK & COVERAGE RULES:
+1. Provide a comprehensive, high-yield summary of what this entire document covers (3-5 clear sentences).
+2. Determine the exact total pages (or estimate realistic page count if slides/notes).
+3. Partition 100% OF THE DOCUMENT into discrete topic page ranges from page 1 to the final page.
+   CRITICAL: DO NOT SKIP ANY PAGES OR TOPICS. Every single chapter, slide section, and subtopic must be included within the pageRanges array so nothing is missed.
 
 Return strictly a single valid JSON object without any other text:
 {{
   "fileId": "{file_id}",
   "fileName": "{file_name}",
   "fileType": "{file_type}",
-  "fileSummary": "<concise whole-file summary>",
+  "fileSummary": "<comprehensive whole-file summary>",
   "totalPages": <integer total pages>,
   "pageRanges": [
     {{
@@ -274,29 +275,36 @@ def run_phase3(payload):
 
     file_name = sanitize_str(file_info.get("fileName", "Document"))
     range_text = sanitize_str(payload.get("rangeText", ""))
-    range_snippet = range_text[:7000] if range_text else f"[Pages {start_p} to {end_p} of {file_name}]"
+    range_snippet = range_text[:25000] if range_text else f"[Pages {start_p} to {end_p} of {file_name}]"
 
     prompt = f"""
-You are an expert academic professor and master tutor for the WeStudy exam preparation platform.
-Your mission is to transform the provided course materials into an exceptionally thorough, crystal-clear, and engaging Coursera-style study lesson.
+You are an expert academic professor and master educator for the WeStudy learning platform.
+Your mission is to transform the provided course materials into an exceptionally thorough, crystal-clear, exhaustive, and engaging Coursera-style study lesson.
 
-PEDAGOGICAL TEACHING PRINCIPLES:
-1. FIRST-PRINCIPLES & INTUITIVE CLARITY:
-   - Explain abstract or complex concepts in simple, accessible terms first.
-   - Use vivid, relatable real-world analogies (e.g. "think of it like...") before diving into technical definitions.
-   - Never assume prior knowledge without explaining the underlying "why" and mechanics.
-2. COMPREHENSIVE DEPTH & DETAIL:
-   - Provide in-depth, thorough coverage of all topics present in the excerpt. Do not skim or skip nuances.
-   - For every formula or equation, clearly explain what every individual variable ($X, Y, \\theta, \\alpha$) represents and the physical/mathematical intuition behind it.
-3. STRUCTURED & VISUAL PRESENTATION:
-   - Use clear hierarchical section titles (## and ###) with clean spacing.
-   - Put ASCII architecture trees, flowcharts, or system diagrams strictly inside ```ascii ... ``` code fences.
-   - Use bold **Terminology** with concise definitions.
-   - Use > [!NOTE] for contextual background, > [!TIP] for high-yield exam tricks & mnemonics, and > [!WARNING] for common student traps.
+PEDAGOGICAL TEACHING PRINCIPLES (MUST FOLLOW STRICTLY):
+1. ZERO OMISSIONS & COMPLETE EXHAUSTIVE COVERAGE:
+   - You MUST include and explain EVERY single concept, theory, theorem, formula, variable, algorithm step, case study, and bullet point present in the source excerpt.
+   - Do NOT skip, skim, gloss over, or assume anything. If an idea or term is in the text, it MUST be explicitly addressed and taught in the notes.
+
+2. DEEP UNPACKING OF VAGUE, TERSE, OR CONDENSED IDEAS:
+   - If the source notes or slides contain brief, vague, bulleted, compressed, or mathematically terse statements, DO NOT just repeat them.
+   - ACTIVELY UNPACK AND DEMYSTIFY THEM: Explain the underlying intuition, the "why" behind the statement, how the mechanism works step-by-step, and why it matters.
+
+3. EXPLAIN IN SIMPLE, INTUITIVE TERMS (FIRST-PRINCIPLES):
+   - Always translate technical jargon into clear, plain English before stating the formal definitions.
+   - Use vivid, intuitive real-world analogies (e.g. "Think of this like...") to make abstract ideas immediately click.
+
+4. EQUATION & VARIABLE-BY-VARIABLE BREAKDOWN:
+   - For every equation, formula, or mathematical notation ($X, Y, P(A|B), \\sum, \\int, \\Omega, \\theta$), explicitly explain what EVERY symbol, subscript, and parameter represents, along with the physical/mathematical intuition.
+
+5. STRUCTURED & VISUAL PRESENTATION:
+   - Use clear hierarchical section titles (## Section Title, ### Subsection Title) with generous whitespace.
+   - Put ASCII architecture trees, flowcharts, or system diagrams inside ```ascii ... ``` code fences.
+   - Use > [!NOTE] for conceptual background, > [!TIP] for high-yield exam tricks & shortcuts, > [!WARNING] for common misconceptions & traps, and > [!IMPORTANT] for core principles.
 
 DOCUMENT: "{file_name}"
 TOPIC: "{topic_title}" (Pages {start_p} to {end_p})
-STUDENT CONTEXT: Target Exam: {exam_type}, Time Available: {time_avail}, Depth: {depth}, Question Density: {density}.
+STUDENT CONTEXT: Target Exam: {exam_type}, Time Available: {time_avail}, Target Depth: {depth}, Question Density: {density}.
 
 SOURCE TEXT EXCERPT (PAGES {start_p} TO {end_p}):
 ---
@@ -304,11 +312,11 @@ SOURCE TEXT EXCERPT (PAGES {start_p} TO {end_p}):
 ---
 
 REQUIREMENTS:
-1. summary: High-yield executive overview of this page range (2-3 clear sentences).
-2. markdownStudyNotes: Rich, beautifully structured, and highly detailed Markdown notes strictly grounded in the excerpt above adhering to the pedagogical principles.
-3. keyFormulasOrTerms: 2-4 core terminology or equations with simple, intuitive definitions.
-4. assessment: Exactly {q_count} multiple-choice questions with 4 options, correctAnswer, and comprehensive explanations detailing why the correct answer is right and why distractors are common misconceptions.
-5. flashcards: 2 active-recall flip flashcards with front (prompt) and back (intuitive, clear explanation).
+1. summary: Comprehensive high-yield executive overview of this page range (2-4 clear sentences).
+2. markdownStudyNotes: Rich, beautifully structured, exhaustive, and easy-to-understand Markdown notes strictly grounded in the excerpt above adhering to all pedagogical principles.
+3. keyFormulasOrTerms: 3-6 core terms or equations with simple, intuitive definitions.
+4. assessment: Exactly {q_count} multiple-choice questions with 4 options, correctAnswer, and comprehensive explanations detailing why the correct answer is right and why distractors are common student misconceptions.
+5. flashcards: 2-3 active-recall flip flashcards with front (prompt/concept) and back (intuitive, clear explanation).
 
 Return strictly a single valid JSON object without any other text:
 {{
@@ -321,9 +329,9 @@ Return strictly a single valid JSON object without any other text:
   }},
   "content": {{
     "summary": "<summary>",
-    "markdownStudyNotes": "<detailed, beautifully formatted markdown notes>",
+    "markdownStudyNotes": "<exhaustive, crystal-clear, beautifully formatted markdown notes>",
     "keyFormulasOrTerms": [
-      {{ "term": "<Term>", "definition": "<Definition>" }}
+      {{ "term": "<Term>", "definition": "<Intuitive Definition>" }}
     ]
   }},
   "assessment": {{
@@ -360,7 +368,7 @@ def run_chat(payload):
 You are the dedicated AI Study Tutor for the topic: "{topic_title}".
 You are strictly grounded in these lesson notes:
 ---
-{notes[:3000]}
+{notes[:5000]}
 ---
 
 Recent Chat History:
@@ -370,7 +378,8 @@ Student Question: "{user_msg}"
 
 TEACHING INSTRUCTIONS:
 - Explain concepts from first principles in simple, intuitive terms using relatable real-world analogies.
-- Break down complex mechanisms step-by-step without skipping important details.
+- If the student asks about a vague or condensed idea, unpack it deeply: explain the "why", the mechanism, and step-by-step logic.
+- Break down any formulas variable-by-variable.
 - Provide encouraging, structured, and exam-focused explanations.
 - Ground your answer directly in the lesson material.
 """
