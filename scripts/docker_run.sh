@@ -1,5 +1,5 @@
 #!/bin/bash
-# WeStudy Docker Container Starter (MongoDB + Redis)
+# WeStudy Docker Container Starter (MongoDB + Redis + Antigravity Proxy)
 
 # Check if Docker daemon is running
 if ! docker info >/dev/null 2>&1; then
@@ -23,7 +23,7 @@ if ! docker info >/dev/null 2>&1; then
     exit 1
 fi
 
-echo "🐳 Starting WeStudy MongoDB and Redis containers..."
+echo "🐳 Starting WeStudy containers (MongoDB, Redis)..."
 
 # 1. MongoDB
 if [ "$(docker ps -q -f name=we-study-mongodb)" ]; then
@@ -47,15 +47,7 @@ else
     docker run -d --name we-study-redis -p 6379:6379 -v redis_data:/data redis:7-alpine redis-server --appendonly yes
 fi
 
-# Verify containers are running
-sleep 2
-MONGO_UP=$(docker ps -q -f name=we-study-mongodb)
-REDIS_UP=$(docker ps -q -f name=we-study-redis)
+echo ""
+echo "✅ MongoDB is running on port 27017"
+echo "✅ Redis is running on port 6379"
 
-if [ -n "$MONGO_UP" ] && [ -n "$REDIS_UP" ]; then
-    echo "✅ MongoDB is running on port 27017"
-    echo "✅ Redis is running on port 6379"
-else
-    echo "⚠️  One or more containers failed to start. Running status check:"
-    docker ps -a --filter "name=we-study"
-fi

@@ -1,5 +1,7 @@
 import { spawn } from 'child_process';
 import path from 'path';
+import fs from 'fs';
+import { extractDocumentText } from '@/lib/extractors/document';
 import {
   Phase1FileAnalysis,
   Phase2SequencePlan,
@@ -12,7 +14,7 @@ const BRIDGE_SCRIPT_PATH = path.join(process.cwd(), 'scripts', 'antigravity_brid
 /**
  * Spawns the Antigravity CLI / Python execution bridge with JSON in/out
  */
-async function runAntigravityProcess<T>(phase: 'phase1' | 'phase2' | 'phase3' | 'chat', payload: any): Promise<T> {
+async function runAntigravityCliBridge<T>(phase: 'phase1' | 'phase2' | 'phase3' | 'chat', payload: any): Promise<T> {
   return new Promise((resolve, reject) => {
     const python = spawn('python3', [BRIDGE_SCRIPT_PATH, '--phase', phase]);
 
@@ -29,7 +31,7 @@ async function runAntigravityProcess<T>(phase: 'phase1' | 'phase2' | 'phase3' | 
 
     python.on('close', (code) => {
       if (code !== 0) {
-        return reject(new Error(`Antigravity process exited with code ${code}: ${stderr}`));
+        return reject(new Error(`Antigravity process exited with code ${code}: ${stderr || stdout}`));
       }
       try {
         const parsed = JSON.parse(stdout.trim());
@@ -44,9 +46,6 @@ async function runAntigravityProcess<T>(phase: 'phase1' | 'phase2' | 'phase3' | 
   });
 }
 
-import fs from 'fs';
-import { extractDocumentText } from '@/lib/extractors/document';
-
 /**
  * Phase 1: Antigravity File Analysis (Extracts Page Ranges & Whole-File Summary)
  */
@@ -56,7 +55,6 @@ export async function executePhase1WithAntigravity(file: {
   fileType: 'pdf' | 'docx' | 'pptx' | 'txt';
   s3: any;
 }): Promise<Phase1FileAnalysis> {
-  // Check if file exists in local storage
   let fileContent = '';
   let targetPath = file.s3?.localPath;
 
@@ -69,7 +67,7 @@ export async function executePhase1WithAntigravity(file: {
     fileContent = extracted.text;
   }
 
-  return runAntigravityProcess<Phase1FileAnalysis>('phase1', {
+  return runAntigravityCliBridge<Phase1FileAnalysis>('phase1', {
     ...file,
     fileContent,
   });
@@ -84,7 +82,7 @@ export async function executePhase2WithAntigravity(params: {
   subjectId: string;
   files: Phase1FileAnalysis[];
 }): Promise<Phase2SequencePlan> {
-  return runAntigravityProcess<Phase2SequencePlan>('phase2', params);
+  return runAntigravityCliBridge<Phase2SequencePlan>('phase2', params);
 }
 
 /**
@@ -98,7 +96,7 @@ export async function executePhase3WithAntigravity(params: {
   moduleNumber: number;
   lessonNumber: number;
 }): Promise<Phase3RangeContent> {
-  return runAntigravityProcess<Phase3RangeContent>('phase3', params);
+  return runAntigravityCliBridge<Phase3RangeContent>('phase3', params);
 }
 
 /**
@@ -110,6 +108,6 @@ export async function executeTopicChatWithAntigravity(params: {
   userMessage: string;
   chatHistory: { role: 'user' | 'assistant'; content: string }[];
 }): Promise<string> {
-  const result = await runAntigravityProcess<{ reply: string }>('chat', params);
+  const result = await runAntigravityCliBridge<{ reply: string }>('chat', params);
   return result.reply;
 }

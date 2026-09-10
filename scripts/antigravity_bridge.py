@@ -11,67 +11,101 @@ import argparse
 import subprocess
 import os
 import re
+import time
 
 AGY_BINARY = "/Users/yabsera/.local/bin/agy"
 
+def sanitize_str(text):
+    """Strips null bytes and non-printable control characters to prevent OS execution errors"""
+    if not isinstance(text, str):
+        return str(text)
+    # Remove null bytes and non-printable control chars
+    clean = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', ' ', text)
+    return clean.strip()
+
 def clean_json_response(raw_text):
-    """Strips markdown fences or preamble from CLI text output to extract valid JSON"""
+    """Strips markdown fences, preamble, and extracts the complete outermost JSON object"""
     text = raw_text.strip()
-    
-    # Check if inside markdown block ```json ... ```
+
+    # Find the outermost { and }
+    first_brace = text.find('{')
+    last_brace = text.rfind('}')
+    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+        return text[first_brace:last_brace + 1]
+
+    # Fallback to code block regex
     match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
     if match:
-        text = match.group(1).strip()
-    else:
-        # Find first { and last }
-        first_brace = text.find('{')
-        last_brace = text.rfind('}')
-        if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
-            text = text[first_brace:last_brace + 1]
-            
+        block = match.group(1).strip()
+        fb = block.find('{')
+        lb = block.rfind('}')
+        if fb != -1 and lb != -1 and lb > fb:
+            return block[fb:lb + 1]
+        return block
+
     return text
 
-def call_antigravity_cli(prompt):
-    """Executes the prompt directly through Antigravity CLI"""
+def call_antigravity_cli(prompt, max_retries=3):
+    """Executes the prompt directly through Antigravity CLI with automatic retries for network drops"""
     if not os.path.exists(AGY_BINARY):
         raise RuntimeError(f"Antigravity CLI binary not found at {AGY_BINARY}")
 
+    clean_prompt = sanitize_str(prompt)
+
+    model_name = os.environ.get("AGY_MODEL", "gemini-3.7-flash-medium")
     cmd = [
         AGY_BINARY,
-        "--print",
-        prompt,
+        "--model",
+        model_name,
+        "--disable-slash-commands",
         "--output-format",
         "text",
-        "--dangerously-skip-permissions"
+        "--dangerously-skip-permissions",
+        "-p",
+        clean_prompt
     ]
 
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=180
-    )
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
 
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"Antigravity CLI exited with code {result.returncode}:\nStdout: {result.stdout}\nStderr: {result.stderr}"
-        )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
 
-    output = result.stdout.strip()
-    if not output:
-        raise RuntimeError("Antigravity CLI returned empty output")
+            error_msg = result.stderr or result.stdout or f"Exit code {result.returncode}"
+            last_error = RuntimeError(f"Antigravity CLI failed (attempt {attempt}/{max_retries}): {error_msg}")
 
-    return output
+            # If transient network or socket issue, wait and retry
+            if any(term in error_msg.lower() for term in ["network", "closed network connection", "connection reset", "timeout", "eof"]):
+                time.sleep(attempt * 2)
+                continue
+            else:
+                # If not transient, still retry once more or raise
+                time.sleep(1)
+        except subprocess.TimeoutExpired:
+            last_error = RuntimeError(f"Antigravity CLI timed out after 120s (attempt {attempt}/{max_retries})")
+            time.sleep(2)
+        except Exception as err:
+            last_error = err
+            time.sleep(2)
+
+    raise last_error or RuntimeError("Antigravity CLI failed to return a response after retries.")
 
 def run_phase1(payload):
     """Phase 1: Real Document Analysis & Page Range Extraction using Antigravity CLI"""
-    file_id = payload.get("fileId", "file_01")
-    file_name = payload.get("fileName", "Document.pdf")
-    file_type = payload.get("fileType", "pdf")
-    raw_content = payload.get("fileContent", "")
-    
+    file_id = sanitize_str(payload.get("fileId", "file_01"))
+    file_name = sanitize_str(payload.get("fileName", "Document.pdf"))
+    file_type = sanitize_str(payload.get("fileType", "pdf"))
+    raw_content = sanitize_str(payload.get("fileContent", ""))
+
     content_snippet = raw_content[:8000] if raw_content else f"[Document: {file_name}]"
-    
+
     prompt = f"""
 You are the AI curriculum analyzer for the WeStudy exam preparation platform.
 Analyze this course document:
@@ -119,7 +153,7 @@ def run_phase2(payload):
     """Phase 2: Real Sequence Planning Based Strictly on Summaries using Antigravity CLI"""
     files = payload.get("files", [])
     summaries_text = "\n".join(
-        [f"{i+1}. [File ID: {f.get('fileId')}] \"{f.get('fileName')}\": {f.get('fileSummary')}" for i, f in enumerate(files)]
+        [f"{i+1}. [File ID: {sanitize_str(f.get('fileId'))}] \"{sanitize_str(f.get('fileName'))}\": {sanitize_str(f.get('fileSummary'))}" for i, f in enumerate(files)]
     )
 
     prompt = f"""
@@ -135,9 +169,9 @@ RULES:
 
 Return strictly a single valid JSON object without any other text:
 {{
-  "sessionId": "{payload.get('sessionId')}",
-  "userId": "{payload.get('userId')}",
-  "subjectId": "{payload.get('subjectId')}",
+  "sessionId": "{sanitize_str(payload.get('sessionId'))}",
+  "userId": "{sanitize_str(payload.get('userId'))}",
+  "subjectId": "{sanitize_str(payload.get('subjectId'))}",
   "totalFiles": {len(files)},
   "orderedFiles": [
     {{
@@ -161,21 +195,21 @@ def run_phase3(payload):
     range_info = payload.get("range", {})
     prefs = payload.get("preferences", {})
 
-    topic_title = range_info.get("topicTitle", "Lesson")
+    topic_title = sanitize_str(range_info.get("topicTitle", "Lesson"))
     start_p = range_info.get("startPage", 1)
     end_p = range_info.get("endPage", 5)
 
-    density = prefs.get("questionDensity", "high")
+    density = sanitize_str(prefs.get("questionDensity", "high"))
     q_count = 4 if density == "high" else (2 if density == "medium" else 1)
-    
-    depth = prefs.get("subjectContext", {}).get("targetDepth", "solid_understanding")
-    exam_type = prefs.get("subjectContext", {}).get("targetExamType", "final_exam")
-    time_avail = prefs.get("subjectContext", {}).get("timeAvailable", "1_to_2_weeks")
+
+    depth = sanitize_str(prefs.get("subjectContext", {}).get("targetDepth", "solid_understanding"))
+    exam_type = sanitize_str(prefs.get("subjectContext", {}).get("targetExamType", "final_exam"))
+    time_avail = sanitize_str(prefs.get("subjectContext", {}).get("timeAvailable", "1_to_2_weeks"))
 
     prompt = f"""
 You are an expert academic professor and exam tutor for WeStudy.
 Generate a comprehensive, Coursera-style study lesson for:
-- Document: "{file_info.get('fileName')}"
+- Document: "{sanitize_str(file_info.get('fileName'))}"
 - Topic: "{topic_title}" (Pages {start_p} to {end_p})
 - Student Context: Target Exam: {exam_type}, Time Available: {time_avail}, Depth: {depth}, Question Density: {density}.
 
@@ -192,8 +226,8 @@ REQUIREMENTS:
 
 Return strictly a single valid JSON object without any other text:
 {{
-  "rangeId": "{range_info.get('rangeId')}",
-  "fileId": "{file_info.get('fileId')}",
+  "rangeId": "{sanitize_str(range_info.get('rangeId'))}",
+  "fileId": "{sanitize_str(file_info.get('fileId'))}",
   "topicTitle": "{topic_title}",
   "pageRange": {{
     "startPage": {start_p},
@@ -209,7 +243,7 @@ Return strictly a single valid JSON object without any other text:
   "assessment": {{
     "questions": [
       {{
-        "questionId": "q_{range_info.get('rangeId')}_1",
+        "questionId": "q_{sanitize_str(range_info.get('rangeId'))}_1",
         "type": "multiple_choice",
         "question": "<Question text>",
         "options": ["<Option A>", "<Option B>", "<Option C>", "<Option D>"],
@@ -218,7 +252,7 @@ Return strictly a single valid JSON object without any other text:
       }}
     ],
     "flashcards": [
-      {{ "cardId": "fc_{range_info.get('rangeId')}_1", "front": "<Front>", "back": "<Back>" }}
+      {{ "cardId": "fc_{sanitize_str(range_info.get('rangeId'))}_1", "front": "<Front>", "back": "<Back>" }}
     ]
   }}
 }}
@@ -230,12 +264,12 @@ Return strictly a single valid JSON object without any other text:
 
 def run_chat(payload):
     """Dedicated Lesson Tutor Chat with Antigravity CLI"""
-    topic_title = payload.get("topicTitle", "Lesson")
-    notes = payload.get("markdownNotes", "")
-    user_msg = payload.get("userMessage", "")
+    topic_title = sanitize_str(payload.get("topicTitle", "Lesson"))
+    notes = sanitize_str(payload.get("markdownNotes", ""))
+    user_msg = sanitize_str(payload.get("userMessage", ""))
     history = payload.get("chatHistory", [])
 
-    history_str = "\n".join([f"{m.get('role', 'user')}: {m.get('content', '')}" for m in history[-6:]])
+    history_str = "\n".join([f"{m.get('role', 'user')}: {sanitize_str(m.get('content', ''))}" for m in history[-6:]])
 
     prompt = f"""
 You are the dedicated AI Study Tutor for the topic: "{topic_title}".
@@ -263,7 +297,10 @@ def main():
     parser.add_argument("--phase", required=True, choices=["phase1", "phase2", "phase3", "chat"])
     args = parser.parse_args()
 
-    input_data = json.load(sys.stdin)
+    raw_input = sys.stdin.read()
+    # Strip null bytes and illegal control chars from stdin before JSON decoding
+    sanitized_input = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F]', ' ', raw_input)
+    input_data = json.loads(sanitized_input)
 
     try:
         if args.phase == "phase1":

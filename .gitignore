@@ -34,8 +34,9 @@ yarn-error.log*
 .env*
 !.env.example
 
-# local uploads
+# local uploads & proxy auth
 /uploads/
+antigravity-accounts.json
 
 # vercel
 .vercel
