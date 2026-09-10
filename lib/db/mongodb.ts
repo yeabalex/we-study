@@ -126,10 +126,10 @@ export const db = {
   async getSubjects(userId: string) {
     const mongo = await getDb();
     if (mongo) {
-      return mongo.collection('subjects').find({ userId }).sort({ updatedAt: -1 }).toArray();
+      return mongo.collection('subjects').find({ userId, status: 'ready' }).sort({ updatedAt: -1 }).toArray();
     }
     return Array.from(memoryDB.subjects.values())
-      .filter((s) => s.userId === userId)
+      .filter((s) => s.userId === userId && s.status === 'ready')
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   },
 

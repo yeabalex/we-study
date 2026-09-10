@@ -19,17 +19,6 @@ export async function POST(req: NextRequest) {
 
     const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
-    // Save subject in draft/processing status
-    await db.saveSubject({
-      _id: subjectId,
-      userId: session.userId,
-      title: subjectTitle,
-      fileCount: files.length,
-      status: 'processing',
-      preferences,
-      updatedAt: new Date(),
-    });
-
     const jobParams: StartPipelineJobParams = {
       sessionId,
       userId: session.userId,

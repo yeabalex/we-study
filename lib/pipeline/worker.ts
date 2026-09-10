@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { db } from '@/lib/db/mongodb';
 import { sessionCache } from '@/lib/db/redis';
 import {
@@ -198,7 +200,7 @@ export async function runGenerationPipeline(params: StartPipelineJobParams): Pro
 
     await db.saveCourse(courseDocument);
 
-    // Update subject status to ready in MongoDB
+    // Save fully completed subject in MongoDB with status: 'ready'
     await db.saveSubject({
       _id: subjectId,
       userId,
@@ -206,7 +208,13 @@ export async function runGenerationPipeline(params: StartPipelineJobParams): Pro
       fileCount: files.length,
       status: 'ready',
       courseId: courseDocument._id,
+      subjectContext: preferences?.subjectContext || {
+        targetExamType: 'final_exam',
+        timeAvailable: '1_to_2_weeks',
+        targetDepth: 'solid_understanding',
+      },
       preferences,
+      createdAt: new Date(),
       updatedAt: new Date(),
     });
 
@@ -222,6 +230,18 @@ export async function runGenerationPipeline(params: StartPipelineJobParams): Pro
     await sessionCache.setSessionState(sessionId, state);
   } catch (error: any) {
     console.error('Background generation pipeline failed:', error);
+
+    // Clean up failed subject from DB and delete physical files from disk
+    try {
+      await db.deleteSubject(subjectId, userId);
+      const userSubjectDir = path.join(process.cwd(), 'uploads', 'users', userId, 'subjects', subjectId);
+      if (fs.existsSync(userSubjectDir)) {
+        fs.rmSync(userSubjectDir, { recursive: true, force: true });
+      }
+    } catch (cleanupErr) {
+      console.error('Failed to cleanup subject after pipeline failure:', cleanupErr);
+    }
+
     const failedState: GenerationSessionState = {
       sessionId,
       userId,

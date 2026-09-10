@@ -35,6 +35,8 @@ export function CreateSubjectModal({ isOpen, onClose, userDefaultPreferences }: 
   const router = useRouter();
   const [step, setStep] = useState<1 | 2>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [subjectId, setSubjectId] = useState(() => `sub_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
+  const [sessionId, setSessionId] = useState(() => `sess_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`);
 
   // Step 1: Subject info & preparation context
   const [title, setTitle] = useState('');
@@ -49,15 +51,20 @@ export function CreateSubjectModal({ isOpen, onClose, userDefaultPreferences }: 
   const [files, setFiles] = useState<UploadedFileItem[]>([]);
   const [isDragging, setIsDragging] = useState(false);
 
+  const handleClose = () => {
+    setTitle('');
+    setFiles([]);
+    setStep(1);
+    setIsSubmitting(false);
+    setSubjectId(`sub_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
+    setSessionId(`sess_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`);
+    onClose();
+  };
+
   if (!isOpen) return null;
 
   const handleFileUpload = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
-
-    const subjectId = `sub_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-
-    const newUploadedFiles: UploadedFileItem[] = [];
 
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
@@ -122,8 +129,6 @@ export function CreateSubjectModal({ isOpen, onClose, userDefaultPreferences }: 
     if (!title.trim() || files.length === 0) return;
     setIsSubmitting(true);
 
-    const subjectId = `sub_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-
     const preferences = {
       ...(userDefaultPreferences || {}),
       questionDensity,
@@ -156,6 +161,8 @@ export function CreateSubjectModal({ isOpen, onClose, userDefaultPreferences }: 
       const data = await res.json();
       if (data.sessionId) {
         router.push(`/subject/${subjectId}/generating?sessionId=${data.sessionId}`);
+      } else {
+        setIsSubmitting(false);
       }
     } catch (err) {
       console.error('Failed to trigger generation:', err);
@@ -180,7 +187,7 @@ export function CreateSubjectModal({ isOpen, onClose, userDefaultPreferences }: 
             </h2>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="w-9 h-9 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-600 flex items-center justify-center transition-colors"
           >
             <X className="w-5 h-5" />
@@ -418,7 +425,7 @@ export function CreateSubjectModal({ isOpen, onClose, userDefaultPreferences }: 
             <>
               <button
                 type="button"
-                onClick={onClose}
+                onClick={handleClose}
                 className="px-4 py-2.5 text-xs font-semibold text-neutral-500 hover:text-neutral-800"
               >
                 Cancel
