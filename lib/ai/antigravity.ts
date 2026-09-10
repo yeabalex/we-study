@@ -1,7 +1,7 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
-import { extractDocumentText } from '@/lib/extractors/document';
+import { extractDocumentText, extractPageRangeText } from '@/lib/extractors/document';
 import {
   Phase1FileAnalysis,
   Phase2SequencePlan,
@@ -86,7 +86,7 @@ export async function executePhase2WithAntigravity(params: {
 }
 
 /**
- * Phase 3: Antigravity Range Content & Quiz Generation (New chat context per range)
+ * Phase 3: Antigravity Range Content & Quiz Generation (New chat context per range strictly on that range's text)
  */
 export async function executePhase3WithAntigravity(params: {
   sessionId: string;
@@ -96,7 +96,25 @@ export async function executePhase3WithAntigravity(params: {
   moduleNumber: number;
   lessonNumber: number;
 }): Promise<Phase3RangeContent> {
-  return runAntigravityCliBridge<Phase3RangeContent>('phase3', params);
+  let targetPath = params.file.s3?.localPath;
+  if (!targetPath && params.file.s3?.s3Key) {
+    targetPath = path.join(process.cwd(), 'uploads', params.file.s3.s3Key.replace(/\//g, '_'));
+  }
+
+  let rangeText = '';
+  if (targetPath && fs.existsSync(/*turbopackIgnore: true*/ targetPath)) {
+    rangeText = await extractPageRangeText(
+      targetPath,
+      params.file.fileType,
+      params.range.startPage,
+      params.range.endPage
+    );
+  }
+
+  return runAntigravityCliBridge<Phase3RangeContent>('phase3', {
+    ...params,
+    rangeText,
+  });
 }
 
 /**

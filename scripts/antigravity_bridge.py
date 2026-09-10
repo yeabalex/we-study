@@ -268,20 +268,25 @@ def run_phase3(payload):
     density = sanitize_str(prefs.get("questionDensity", "high"))
     q_count = 4 if density == "high" else (2 if density == "medium" else 1)
 
-    depth = sanitize_str(prefs.get("subjectContext", {}).get("targetDepth", "solid_understanding"))
-    exam_type = sanitize_str(prefs.get("subjectContext", {}).get("targetExamType", "final_exam"))
-    time_avail = sanitize_str(prefs.get("subjectContext", {}).get("timeAvailable", "1_to_2_weeks"))
+    file_name = sanitize_str(file_info.get("fileName", "Document"))
+    range_text = sanitize_str(payload.get("rangeText", ""))
+    range_snippet = range_text[:7000] if range_text else f"[Pages {start_p} to {end_p} of {file_name}]"
 
     prompt = f"""
 You are an expert academic professor and exam tutor for WeStudy.
-Generate a comprehensive, Coursera-style study lesson for:
-- Document: "{sanitize_str(file_info.get('fileName'))}"
+Generate a comprehensive, Coursera-style study lesson strictly grounded in the following course material excerpt:
+- Document: "{file_name}"
 - Topic: "{topic_title}" (Pages {start_p} to {end_p})
 - Student Context: Target Exam: {exam_type}, Time Available: {time_avail}, Depth: {depth}, Question Density: {density}.
 
+SOURCE TEXT EXCERPT (PAGES {start_p} TO {end_p}):
+---
+{range_snippet}
+---
+
 REQUIREMENTS:
 1. summary: High-yield executive overview of this page range (2-3 sentences).
-2. markdownStudyNotes: Rich, beautifully structured Markdown notes formatted to perfection:
+2. markdownStudyNotes: Rich, beautifully structured Markdown notes strictly grounded in the page {start_p}-{end_p} excerpt above:
    - Use ## for main section titles (e.g. "## 1. Core Concepts & Foundations") and ### for sub-sections. Never use raw unformatted numbers for titles.
    - Use standard LaTeX for equations: $$...$$ for display equations and $...$ for inline math variables.
    - Put all ASCII diagrams, trees, or workflows strictly inside ```ascii ... ``` code fences so they render cleanly in monospace.

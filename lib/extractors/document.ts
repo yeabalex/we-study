@@ -75,3 +75,56 @@ export async function extractDocumentText(filePath: string, fileType: string): P
     return { text: '', pageCount: 1 };
   }
 }
+
+/**
+ * Extracts the exact text content belonging strictly to pages [startPage..endPage]
+ */
+export async function extractPageRangeText(
+  filePath: string,
+  fileType: string,
+  startPage: number,
+  endPage: number
+): Promise<string> {
+  if (!fs.existsSync(filePath)) {
+    return '';
+  }
+
+  try {
+    if (fileType === 'pdf') {
+      try {
+        const { getDocumentProxy, extractText } = await import('unpdf');
+        const buffer = fs.readFileSync(filePath);
+        const pdf = await getDocumentProxy(new Uint8Array(buffer));
+        const { text } = await extractText(pdf, { mergePages: false });
+
+        if (Array.isArray(text)) {
+          const startIdx = Math.max(0, startPage - 1);
+          const endIdx = Math.min(text.length, endPage);
+          const pagesSlice = text.slice(startIdx, endIdx);
+          const combined = pagesSlice
+            .map((pageStr, idx) => `[Page ${startIdx + idx + 1}]\n${sanitizeText(pageStr)}`)
+            .join('\n\n');
+          return combined;
+        }
+      } catch (err) {
+        console.warn('Per-page PDF extraction fallback:', err);
+      }
+    }
+
+    // For TXT, DOCX, PPTX or fallback: slice proportion of full text
+    const fullDoc = await extractDocumentText(filePath, fileType);
+    if (!fullDoc.text) return '';
+
+    const totalPages = Math.max(1, fullDoc.pageCount || 1);
+    const charsPerPage = Math.ceil(fullDoc.text.length / totalPages);
+
+    const startChar = Math.max(0, (startPage - 1) * charsPerPage);
+    const endChar = Math.min(fullDoc.text.length, endPage * charsPerPage);
+
+    return fullDoc.text.substring(startChar, endChar).trim();
+  } catch (err) {
+    console.error(`Failed to extract page range [${startPage}-${endPage}] from ${filePath}:`, err);
+    return '';
+  }
+}
+
