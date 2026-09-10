@@ -281,11 +281,13 @@ Generate a comprehensive, Coursera-style study lesson for:
 
 REQUIREMENTS:
 1. summary: High-yield executive overview of this page range (2-3 sentences).
-2. markdownStudyNotes: Rich, beautifully formatted Markdown notes with:
-   - Clear ## and ### headers
-   - Step-by-step conceptual mechanisms
-   - Formulas / ASCII diagrams / Key principles
-   - > [!NOTE] and > [!TIP] callouts for common exam traps and high-yield memory aids
+2. markdownStudyNotes: Rich, beautifully structured Markdown notes formatted to perfection:
+   - Use ## for main section titles (e.g. "## 1. Core Concepts & Foundations") and ### for sub-sections. Never use raw unformatted numbers for titles.
+   - Use standard LaTeX for equations: $$...$$ for display equations and $...$ for inline math variables.
+   - Put all ASCII diagrams, trees, or workflows strictly inside ```ascii ... ``` code fences so they render cleanly in monospace.
+   - Use bold **Key Terminology** followed by concise definitions or mechanism explanations.
+   - Include > [!NOTE] callouts for domain context and > [!TIP] callouts for high-yield exam traps or shortcuts.
+   - Keep paragraphs well-spaced and easy to skim.
 3. keyFormulasOrTerms: 2-4 core terminology or equations with concise definitions.
 4. assessment: Exactly {q_count} multiple-choice questions with 4 options, correctAnswer, and comprehensive explanations.
 5. flashcards: 2 active-recall flip flashcards with front (prompt) and back (explanation).

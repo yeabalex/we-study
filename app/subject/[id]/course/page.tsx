@@ -4,6 +4,7 @@ import React, { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { CourseMarkdown } from '@/components/markdown/CourseMarkdown';
 import { SparkLogo } from '@/components/illustrations/SparkLogo';
 import {
   BookOpen,
@@ -422,10 +423,8 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
                   </div>
 
                   {/* Formatted Markdown Notes */}
-                  <div className="bg-white rounded-3xl p-6 sm:p-8 border border-neutral-200/80 shadow-sm prose prose-neutral max-w-none text-neutral-800 leading-relaxed">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {selectedLesson.markdownNotes}
-                    </ReactMarkdown>
+                  <div className="bg-white rounded-3xl p-6 sm:p-10 border border-neutral-200/80 shadow-sm">
+                    <CourseMarkdown content={selectedLesson.markdownNotes} />
                   </div>
 
                   {/* Key Terms Glossary */}
@@ -674,11 +673,15 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
                   <div
                     className={`max-w-[85%] p-3.5 rounded-2xl text-xs leading-relaxed ${
                       msg.role === 'user'
-                        ? 'bg-neutral-900 text-white rounded-br-none'
+                        ? 'bg-neutral-900 text-white rounded-br-none font-medium'
                         : 'bg-white border border-neutral-200 text-neutral-800 rounded-bl-none shadow-sm'
                     }`}
                   >
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                    {msg.role === 'user' ? (
+                      <p className="whitespace-pre-wrap">{msg.content}</p>
+                    ) : (
+                      <CourseMarkdown content={msg.content} />
+                    )}
                   </div>
                 </div>
               ))
